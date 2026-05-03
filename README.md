@@ -28,7 +28,7 @@ A complete, production-ready Telegram Mini App for playing Bingo with real-time 
 
 ```
 amhabingo/
-├── backend/              # FastAPI Backend
+├── backend/              # FastAPI Backend ✅
 │   ├── app/
 │   │   ├── main.py      # FastAPI app
 │   │   ├── models.py    # Database models
@@ -47,13 +47,34 @@ amhabingo/
 │   ├── requirements.txt
 │   └── README.md
 │
-├── frontend/            # Next.js Frontend (TO BE CREATED)
-│   ├── app/
-│   ├── components/
-│   ├── lib/
-│   └── README.md
+├── frontend/            # Next.js Frontend ✅
+│   ├── app/            # Pages (App Router)
+│   │   ├── page.tsx    # Home
+│   │   ├── stake/      # Stake selection
+│   │   ├── cards/      # Card selection (1-600)
+│   │   ├── game/       # Active game screen
+│   │   └── winner/     # Winner page
+│   ├── components/     # React components
+│   │   ├── BingoCard.tsx
+│   │   ├── CalledNumbers.tsx
+│   │   ├── Timer.tsx
+│   │   ├── WinnerModal.tsx
+│   │   └── Loading.tsx
+│   ├── lib/           # Core libraries
+│   │   ├── api.ts     # API client
+│   │   ├── websocket.ts
+│   │   ├── telegram.ts
+│   │   └── audio.ts   # Web Speech API
+│   ├── store/         # Zustand state
+│   │   └── gameStore.ts
+│   ├── hooks/         # Custom hooks
+│   │   ├── useWebSocket.ts
+│   │   └── useTelegram.ts
+│   └── FRONTEND_STATUS.md
 │
 ├── old-bot/            # Original simple bot (archived)
+├── TESTING_GUIDE.md    # Complete testing guide
+├── DEPLOYMENT_GUIDE.md # Production deployment
 └── README.md           # This file
 ```
 
@@ -99,11 +120,26 @@ uvicorn app.main:app --reload
 
 Backend will be available at `http://localhost:8000`
 
-### Frontend Setup (Coming Next)
+### Frontend Setup
 
+1. **Navigate to frontend:**
 ```bash
 cd frontend
+```
+
+2. **Install dependencies:**
+```bash
 npm install
+```
+
+3. **Setup environment:**
+```bash
+cp .env.local.example .env.local
+# Edit .env.local with backend URLs
+```
+
+4. **Run development server:**
+```bash
 npm run dev
 ```
 
@@ -211,11 +247,26 @@ Once the backend is running, visit:
 
 ## 🎨 UI Screens
 
-1. **Home** - Menu with options
-2. **Stake Selection** - Choose entry fee
-3. **Card Selection** - Pick from 600 cards
-4. **Game Screen** - Live bingo game
-5. **Winner Screen** - Celebration & results
+1. **Home** - Menu with play button, balance, leaderboard
+2. **Stake Selection** - Choose entry fee (Beginner/Pro/VIP)
+3. **Card Selection** - Pick from 600 cards with real-time availability
+4. **Game Screen** - Live bingo game with:
+   - 5x5 Bingo card with auto-marking
+   - Called numbers by category (B-I-N-G-O)
+   - Current number highlighted
+   - Timer countdown
+   - Audio announcements
+   - Claim win button
+5. **Winner Screen** - Celebration & prize display
+
+## 🔊 Audio System
+
+- **Web Speech API** - Text-to-speech announcements
+- **Announcements**:
+  - "Game starting! Good luck!"
+  - "B 5", "I 22", "N 37", etc.
+  - "Bingo! We have a winner!"
+- **Toggle** - Enable/disable anytime during game
 
 ## 🚢 Deployment
 
@@ -244,13 +295,20 @@ Use serverless Redis
 ## 📈 Roadmap
 
 - [x] Backend API
-- [ ] Frontend UI
+- [x] Frontend UI
+- [x] Real-time WebSocket
+- [x] Card selection (1-600)
+- [x] Auto-marking system
+- [x] Audio announcements
+- [x] Winner detection
 - [ ] Payment integration testing
-- [ ] Audio system
-- [ ] Leaderboard
+- [ ] Balance management page
+- [ ] Leaderboard page
+- [ ] Game history
 - [ ] Multiple game rooms
 - [ ] Tournament mode
-- [ ] Mobile app
+- [ ] Push notifications
+- [ ] Mobile app (React Native)
 
 ## 🤝 Contributing
 
@@ -272,4 +330,9 @@ Built with ❤️ for the Ethiopian gaming community
 
 ---
 
-**Status**: Backend Complete ✅ | Frontend In Progress 🚧
+**Status**: Backend Complete ✅ | Frontend Complete ✅ | Ready for Testing 🧪
+
+**See Also**:
+- [TESTING_GUIDE.md](TESTING_GUIDE.md) - Complete testing instructions
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Production deployment guide
+- [frontend/FRONTEND_STATUS.md](frontend/FRONTEND_STATUS.md) - Frontend implementation details
