@@ -49,5 +49,5 @@ Thumbs.db
 # Logs
 *.log
 
-#prompt
-.prompt2.md
+# Prompts
+prompt2.md
