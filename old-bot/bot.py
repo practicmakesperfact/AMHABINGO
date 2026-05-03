@@ -31,6 +31,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAPA_SECRET_KEY = os.getenv("CHAPA_SECRET_KEY")
 ENTRY_FEE = float(os.getenv("ENTRY_FEE", "10"))
 COMMISSION_PERCENT = float(os.getenv("COMMISSION_PERCENT", "10"))
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 # Initialize services
 db = Database()
@@ -229,56 +230,64 @@ async def handle_verify_callback(update: Update, context: ContextTypes.DEFAULT_T
     # Debug: Print full verification response
     print(f"Verification Response: {verification}")
     
-    # Check if verification was successful
-    if verification.get('status') == 'success':
+    # TEST MODE: Auto-approve payments for testing
+    if TEST_MODE:
+        logger.info(f"TEST MODE: Auto-approving payment for {tx_ref}")
+        payment_status = 'success'
+    else:
+        # Check if verification was successful
+        if verification.get('status') != 'success':
+            await query.edit_message_text(
+                f"❌ Verification failed!\n\n"
+                f"Error: {verification.get('message', 'Unknown error')}\n"
+                f"Please try again or contact support."
+            )
+            return
+        
         payment_data = verification.get('data', {})
         payment_status = payment_data.get('status', '').lower()
+    
+    # Chapa payment statuses: 'success', 'pending', 'failed'
+    if payment_status == 'success':
+        # Payment successful
+        db.update_transaction_status(tx_ref, 'success')
         
-        # Chapa payment statuses: 'success', 'pending', 'failed'
-        if payment_status == 'success':
-            # Payment successful
-            db.update_transaction_status(tx_ref, 'success')
+        # Generate bingo card
+        card = BingoGame.generate_card()
+        
+        # Add player to game
+        game_id = transaction['game_id']
+        user_data = db.get_user(user.id)
+        
+        if db.add_player(game_id, user_data['id'], card):
+            # Get player count
+            players = db.get_players(game_id)
             
-            # Generate bingo card
-            card = BingoGame.generate_card()
+            test_badge = "🧪 [TEST MODE] " if TEST_MODE else ""
             
-            # Add player to game
-            game_id = transaction['game_id']
-            user_data = db.get_user(user.id)
-            
-            if db.add_player(game_id, user_data['id'], card):
-                # Get player count
-                players = db.get_players(game_id)
-                
-                await query.edit_message_text(
-                    f"✅ Payment Verified!\n\n"
-                    f"You've joined Game #{game_id}\n"
-                    f"Players: {len(players)}\n\n"
-                    f"Use /my_card to view your bingo card\n"
-                    f"Waiting for game to start..."
-                )
-                
-                # Notify chat
-                await context.bot.send_message(
-                    chat_id=db.get_game(game_id)['chat_id'],
-                    text=f"🎉 {user.first_name} joined the game! ({len(players)} players)"
-                )
-            else:
-                await query.edit_message_text("❌ Failed to join game. You may have already joined.")
-        else:
-            # Payment not completed yet
             await query.edit_message_text(
-                f"⏳ Payment Status: {payment_status.upper()}\n\n"
-                f"Amount: {payment_data.get('amount', 'N/A')} ETB\n"
-                f"Please complete the payment and try again.\n\n"
-                f"If you've already paid, wait a moment and click verify again."
+                f"✅ {test_badge}Payment Verified!\n\n"
+                f"You've joined Game #{game_id}\n"
+                f"Players: {len(players)}\n\n"
+                f"Use /my_card to view your bingo card\n"
+                f"Waiting for game to start..."
             )
+            
+            # Notify chat
+            await context.bot.send_message(
+                chat_id=db.get_game(game_id)['chat_id'],
+                text=f"🎉 {user.first_name} joined the game! ({len(players)} players)"
+            )
+        else:
+            await query.edit_message_text("❌ Failed to join game. You may have already joined.")
     else:
-        # Verification API call failed
+        # Payment not completed yet
+        payment_data = verification.get('data', {})
         await query.edit_message_text(
-            f"❌ Verification failed!\n\n"
-            f"Error: {verification.get('message', 'Unknown error')}\n"
-            f"Please try again or contact support."
+            f"⏳ Payment Status: {payment_status.upper()}\n\n"
+            f"Amount: {payment_data.get('amount', 'N/A')} ETB\n"
+            f"Please complete the payment and try again.\n\n"
+            f"If you've already paid, wait a moment and click verify again."
         )
 
 
@@ -296,11 +305,12 @@ async def start_game_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Game has already started!")
         return
     
-    # Check minimum players
+    # Check minimum players (1 in test mode, 2 in production)
+    min_players = 1 if TEST_MODE else 2
     players = db.get_players(game['id'])
-    if len(players) < 2:
+    if len(players) < min_players:
         await update.message.reply_text(
-            f"❌ Need at least 2 players to start!\n"
+            f"❌ Need at least {min_players} player(s) to start!\n"
             f"Current players: {len(players)}"
         )
         return

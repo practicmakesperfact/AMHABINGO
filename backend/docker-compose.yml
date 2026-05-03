@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: amhabingo_postgres
+    environment:
+      POSTGRES_USER: amhabingo
+      POSTGRES_PASSWORD: amhabingo_password
+      POSTGRES_DB: amhabingo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U amhabingo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: amhabingo_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build: .
+    container_name: amhabingo_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://amhabingo:amhabingo_password@postgres:5432/amhabingo
+      REDIS_URL: redis://redis:6379
+      BOT_TOKEN: ${BOT_TOKEN}
+      TELEGRAM_BOT_SECRET: ${TELEGRAM_BOT_SECRET}
+      CHAPA_SECRET_KEY: ${CHAPA_SECRET_KEY}
+      CHAPA_WEBHOOK_SECRET: ${CHAPA_WEBHOOK_SECRET}
+      SECRET_KEY: ${SECRET_KEY}
+      COMMISSION_PERCENT: 10
+      GAME_INTERVAL_SECONDS: 4
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
