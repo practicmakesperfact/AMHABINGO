@@ -90,7 +90,7 @@ class Transaction(Base):
     status = Column(SQLEnum(TransactionStatus), default=TransactionStatus.PENDING)
     type = Column(SQLEnum(TransactionType), nullable=False)
     payment_method = Column(String, nullable=True)  # chapa, telebirr, etc
-    metadata = Column(JSON, default=dict)
+    extra_data = Column(JSON, default=dict)  # Renamed from 'metadata' to avoid SQLAlchemy conflict
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

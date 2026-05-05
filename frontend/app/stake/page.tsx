@@ -1,10 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTelegram } from '@/hooks/useTelegram';
-import { useGameStore } from '@/store/gameStore';
-import { api } from '@/lib/api';
 
 const STAKE_OPTIONS = [
   { amount: 10, label: '10 ETB', color: 'from-green-500 to-green-600' },
@@ -15,50 +12,57 @@ const STAKE_OPTIONS = [
 
 export default function StakePage() {
   const router = useRouter();
-  const { showBackButton, hideBackButton, hapticFeedback } = useTelegram();
-  const { user, setCurrentGame, setIsLoading } = useGameStore();
   const [selectedStake, setSelectedStake] = useState<number | null>(null);
+  const [user, setUser] = useState<any>(null);
 
-  useState(() => {
-    showBackButton(() => router.push('/'));
-    return () => hideBackButton();
-  });
+  useEffect(() => {
+    // Get user from localStorage or use demo
+    const demoUser = {
+      id: 1,
+      telegram_id: 123456789,
+      username: 'demo_user',
+      first_name: 'Demo Player',
+      balance: 500.0, // Increased balance for testing
+      wins: 0,
+      games_played: 0,
+    };
+    setUser(demoUser);
+  }, []);
 
   const handleStakeSelect = async (amount: number) => {
-    if (!user) return;
+    console.log('🎮 Stake selected:', amount);
+    
+    if (!user) {
+      console.log('❌ No user found');
+      return;
+    }
 
     if (user.balance < amount) {
-      hapticFeedback('heavy');
       alert('Insufficient balance! Please deposit first.');
       return;
     }
 
     setSelectedStake(amount);
-    hapticFeedback('medium');
+    console.log('✅ Navigating to cards page...');
 
-    try {
-      setIsLoading(true);
+    // Create demo game
+    const demoGame = {
+      id: 1,
+      game_id: `GAME-${Date.now()}`,
+      status: 'waiting' as const,
+      room: 'beginner',
+      entry_fee: amount,
+      prize_pool: amount,
+      total_players: 0,
+      max_players: 50,
+      called_numbers: [],
+      current_number: null,
+      winner_ids: [],
+      countdown_seconds: 60,
+    };
 
-      // Find or create game with this stake
-      const games = await api.listGames('waiting', 'beginner');
-      let game = games.find((g: any) => g.entry_fee === amount);
-
-      if (!game) {
-        // Create new game
-        game = await api.createGame('beginner', amount);
-      }
-
-      setCurrentGame(game);
-      setIsLoading(false);
-
-      // Navigate to card selection
-      router.push(`/cards?game=${game.game_id}`);
-    } catch (error) {
-      console.error('Failed to create/join game:', error);
-      setIsLoading(false);
-      hapticFeedback('heavy');
-      alert('Failed to start game. Please try again.');
-    }
+    // Navigate to card selection
+    router.push(`/cards?game=${demoGame.game_id}`);
   };
 
   return (

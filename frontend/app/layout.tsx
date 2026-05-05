@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "AMHABINGO - Telegram Bingo Game",
   description: "Real-time multiplayer bingo game on Telegram",
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
 export default function RootLayout({
@@ -12,11 +15,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script src="https://telegram.org/js/telegram-web-app.js"></script>
       </head>
-      <body className="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen">
+      <body 
+        className="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 min-h-screen"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>

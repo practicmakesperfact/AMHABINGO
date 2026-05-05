@@ -2,116 +2,84 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useTelegram } from '@/hooks/useTelegram';
-import { useGameStore } from '@/store/gameStore';
-import { useWebSocket } from '@/hooks/useWebSocket';
-import { api } from '@/lib/api';
 
 export default function CardsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const gameId = searchParams.get('game');
   
-  const { showBackButton, hideBackButton, hapticFeedback, userId } = useTelegram();
-  const {
-    currentGame,
-    setCurrentGame,
-    selectedCardNumber,
-    setSelectedCardNumber,
-    takenCards,
-    setTakenCards,
-    timer,
-    user,
-  } = useGameStore();
-
-  const { selectCard, unselectCard } = useWebSocket(gameId, userId);
+  const [selectedCardNumber, setSelectedCardNumber] = useState<number | null>(null);
+  const [takenCards, setTakenCards] = useState<Record<number, number>>({});
+  const [timer, setTimer] = useState(60);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    showBackButton(() => router.push('/stake'));
-    return () => hideBackButton();
-  }, []);
+    console.log('🎴 Cards page loaded, gameId:', gameId);
+    
+    if (!gameId) {
+      console.log('❌ No gameId, redirecting to home');
+      router.push('/');
+      return;
+    }
 
+    // Simulate some taken cards for demo
+    const demoTakenCards: Record<number, number> = {};
+    for (let i = 0; i < 20; i++) {
+      const randomCard = Math.floor(Math.random() * 600) + 1;
+      demoTakenCards[randomCard] = 999999; // Other user
+    }
+    setTakenCards(demoTakenCards);
+    
+    setLoading(false);
+    console.log('✅ Cards loaded');
+  }, [gameId, router]);
+
+  // Countdown timer
   useEffect(() => {
-    const loadGame = async () => {
-      if (!gameId) {
-        router.push('/');
-        return;
-      }
-
-      try {
-        // Load game data
-        const game = await api.getGame(gameId);
-        setCurrentGame(game);
-
-        // Load available cards
-        const cardsData = await api.getAvailableCards(gameId);
-        setTakenCards(cardsData.taken_cards);
-
-        setLoading(false);
-      } catch (error) {
-        console.error('Failed to load game:', error);
-        router.push('/');
-      }
-    };
-
-    loadGame();
-  }, [gameId]);
+    if (timer <= 0) return;
+    
+    const interval = setInterval(() => {
+      setTimer((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [timer]);
 
   const handleCardClick = (cardNumber: number) => {
-    if (!userId) return;
-
+    console.log('🎴 Card clicked:', cardNumber);
+    
     const takenBy = takenCards[cardNumber];
 
     // If card is taken by someone else, do nothing
-    if (takenBy && takenBy !== userId) {
-      hapticFeedback('heavy');
+    if (takenBy) {
+      alert('This card is already taken!');
       return;
     }
 
     // If this card is selected by current user, unselect it
     if (selectedCardNumber === cardNumber) {
-      unselectCard(cardNumber);
       setSelectedCardNumber(null);
-      hapticFeedback('light');
+      console.log('❌ Card unselected');
       return;
     }
 
-    // If another card was selected, unselect it first
-    if (selectedCardNumber) {
-      unselectCard(selectedCardNumber);
-    }
-
     // Select this card
-    selectCard(cardNumber);
     setSelectedCardNumber(cardNumber);
-    hapticFeedback('medium');
+    console.log('✅ Card selected:', cardNumber);
   };
 
   const handleContinue = async () => {
     if (!selectedCardNumber || !gameId) return;
 
-    try {
-      hapticFeedback('medium');
-      
-      // Initialize payment
-      const payment = await api.initializePayment(gameId, selectedCardNumber);
-      
-      // Open payment URL
-      window.open(payment.checkout_url, '_blank');
-      
-      // Navigate to game page (will wait for payment verification)
-      router.push(`/game?game=${gameId}&tx_ref=${payment.tx_ref}`);
-    } catch (error) {
-      console.error('Payment failed:', error);
-      hapticFeedback('heavy');
-      alert('Payment initialization failed. Please try again.');
-    }
+    console.log('🎮 Continue to game with card:', selectedCardNumber);
+    
+    // Navigate to game page
+    router.push(`/game?game=${gameId}&card=${selectedCardNumber}`);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-yellow-400 mx-auto"></div>
           <p className="text-white mt-4">Loading cards...</p>
@@ -128,26 +96,26 @@ export default function CardsPage() {
     }
     
     if (takenBy) {
-      return takenBy === userId ? 'card-button-selected' : 'card-button-taken';
+      return 'card-button-taken';
     }
     
     return 'card-button-available';
   };
 
   return (
-    <main className="min-h-screen p-4 pb-24">
+    <main className="min-h-screen p-4 pb-24 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
       {/* Header */}
       <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 mb-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-white font-semibold">Game #{currentGame?.game_id}</p>
+            <p className="text-white font-semibold">Game #{gameId?.slice(-8)}</p>
             <p className="text-gray-300 text-sm">
-              Entry: {currentGame?.entry_fee} ETB
+              Select your card
             </p>
           </div>
           <div className="text-right">
             <p className="text-yellow-400 font-bold text-2xl">
-              {timer > 0 ? `${timer}s` : '0s'}
+              {timer}s
             </p>
             <p className="text-gray-300 text-sm">Time left</p>
           </div>
@@ -168,7 +136,7 @@ export default function CardsPage() {
             key={cardNumber}
             onClick={() => handleCardClick(cardNumber)}
             className={`card-button ${getCardStyle(cardNumber)}`}
-            disabled={takenCards[cardNumber] && takenCards[cardNumber] !== userId}
+            disabled={!!takenCards[cardNumber]}
           >
             {cardNumber}
           </button>
@@ -188,7 +156,7 @@ export default function CardsPage() {
               onClick={handleContinue}
               className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 active:scale-95"
             >
-              Continue to Payment →
+              Continue to Game →
             </button>
           </div>
         </div>
