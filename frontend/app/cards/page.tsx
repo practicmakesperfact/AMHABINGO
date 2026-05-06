@@ -2,37 +2,61 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { api } from '@/lib/api';
 
 export default function CardsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const gameId = searchParams.get('game');
+  const stake = searchParams.get('stake');
   
+  const [gameId, setGameId] = useState<string | null>(null);
   const [selectedCardNumber, setSelectedCardNumber] = useState<number | null>(null);
   const [takenCards, setTakenCards] = useState<Record<number, number>>({});
   const [timer, setTimer] = useState(60);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    console.log('🎴 Cards page loaded, gameId:', gameId);
-    
-    if (!gameId) {
-      console.log('❌ No gameId, redirecting to home');
-      router.push('/');
-      return;
-    }
+    const initGame = async () => {
+      console.log('🎴 Cards page loaded, stake:', stake);
+      
+      if (!stake) {
+        console.log('❌ No stake provided, redirecting to home');
+        router.push('/');
+        return;
+      }
 
-    // Simulate some taken cards for demo
-    const demoTakenCards: Record<number, number> = {};
-    for (let i = 0; i < 20; i++) {
-      const randomCard = Math.floor(Math.random() * 600) + 1;
-      demoTakenCards[randomCard] = 999999; // Other user
-    }
-    setTakenCards(demoTakenCards);
-    
-    setLoading(false);
-    console.log('✅ Cards loaded');
-  }, [gameId, router]);
+      try {
+        // Create or find a waiting game with this stake
+        const games = await api.listGames('waiting', 'beginner');
+        let game;
+        
+        if (games.length > 0) {
+          // Join existing waiting game
+          game = games[0];
+          console.log('✅ Found existing game:', game.game_id);
+        } else {
+          // Create new game
+          game = await api.createGame('beginner', parseFloat(stake));
+          console.log('✅ Created new game:', game.game_id);
+        }
+        
+        setGameId(game.game_id);
+        
+        // Fetch available cards
+        const cardsData = await api.getAvailableCards(game.game_id);
+        setTakenCards(cardsData.taken_cards || {});
+        console.log('✅ Loaded cards, taken:', Object.keys(cardsData.taken_cards || {}).length);
+        
+        setLoading(false);
+      } catch (error) {
+        console.error('❌ Failed to initialize game:', error);
+        alert('Failed to load game. Please try again.');
+        router.push('/');
+      }
+    };
+
+    initGame();
+  }, [stake, router]);
 
   // Countdown timer
   useEffect(() => {
@@ -71,10 +95,22 @@ export default function CardsPage() {
   const handleContinue = async () => {
     if (!selectedCardNumber || !gameId) return;
 
-    console.log('🎮 Continue to game with card:', selectedCardNumber);
+    console.log('🎮 Joining game with card:', selectedCardNumber);
     
-    // Navigate to game page
-    router.push(`/game?game=${gameId}&card=${selectedCardNumber}`);
+    try {
+      setLoading(true);
+      
+      // Join the game with selected card
+      await api.joinGame(gameId, selectedCardNumber);
+      console.log('✅ Successfully joined game');
+      
+      // Navigate to game page
+      router.push(`/game?game=${gameId}&card=${selectedCardNumber}`);
+    } catch (error: any) {
+      console.error('❌ Failed to join game:', error);
+      alert(error.response?.data?.detail || 'Failed to join game. Please try again.');
+      setLoading(false);
+    }
   };
 
   if (loading) {

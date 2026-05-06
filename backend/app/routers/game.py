@@ -16,13 +16,15 @@ router = APIRouter(prefix="/api/games", tags=["games"])
 @router.post("/", response_model=GameResponse)
 async def create_game(
     game_data: GameCreate,
-    init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
     db: AsyncSession = Depends(get_db)
 ):
     """Create a new game"""
-    user_data = extract_user_from_init_data(init_data)
-    if not user_data:
-        raise HTTPException(status_code=401, detail="Invalid Telegram data")
+    # For testing, allow without auth
+    if init_data:
+        user_data = extract_user_from_init_data(init_data)
+        if not user_data:
+            raise HTTPException(status_code=401, detail="Invalid Telegram data")
     
     game_manager = GameManager(db)
     game = await game_manager.create_game(game_data.room, game_data.entry_fee)
@@ -123,24 +125,35 @@ async def get_available_cards(
 async def join_game(
     game_id: str,
     player_data: PlayerCreate,
-    init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
     db: AsyncSession = Depends(get_db)
 ):
     """Join a game (requires payment verification)"""
-    user_data = extract_user_from_init_data(init_data)
-    if not user_data:
-        raise HTTPException(status_code=401, detail="Invalid Telegram data")
-    
-    telegram_id = user_data.get("id")
-    
-    # Get user
-    user_result = await db.execute(
-        select(User).where(User.telegram_id == telegram_id)
-    )
-    user = user_result.scalar_one_or_none()
-    
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    # For testing without Telegram
+    if not init_data:
+        # Use demo user
+        user_result = await db.execute(
+            select(User).where(User.telegram_id == 123456789)
+        )
+        user = user_result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="Demo user not found. Please authenticate first.")
+    else:
+        user_data = extract_user_from_init_data(init_data)
+        if not user_data:
+            raise HTTPException(status_code=401, detail="Invalid Telegram data")
+        
+        telegram_id = user_data.get("id")
+        
+        # Get user
+        user_result = await db.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = user_result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
     
     # Join game
     game_manager = GameManager(db)

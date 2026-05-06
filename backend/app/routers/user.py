@@ -11,10 +11,34 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 @router.post("/auth", response_model=UserResponse)
 async def authenticate_user(
-    init_data: str = Header(..., alias="X-Telegram-Init-Data"),
+    init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
     db: AsyncSession = Depends(get_db)
 ):
     """Authenticate user via Telegram Web App initData"""
+    
+    # For testing without Telegram
+    if not init_data:
+        # Create or get demo user
+        result = await db.execute(
+            select(User).where(User.telegram_id == 123456789)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            user = User(
+                telegram_id=123456789,
+                username="demo_user",
+                first_name="Demo",
+                last_name="Player",
+                balance=1000.0  # Starting balance
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        
+        return user
+    
+    # Real Telegram authentication
     user_data = extract_user_from_init_data(init_data)
     
     if not user_data:
@@ -34,7 +58,8 @@ async def authenticate_user(
             telegram_id=telegram_id,
             username=user_data.get("username"),
             first_name=user_data.get("first_name"),
-            last_name=user_data.get("last_name")
+            last_name=user_data.get("last_name"),
+            balance=1000.0  # Starting balance
         )
         db.add(user)
         await db.commit()
