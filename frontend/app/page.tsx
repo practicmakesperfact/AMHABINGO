@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 export default function Home() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState({
     activePlayers: 45000,
     gamesPlayed: 60000,
@@ -29,8 +30,18 @@ export default function Home() {
         }
         
         setLoading(false);
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Failed to authenticate:', error);
+        
+        // Show user-friendly error message
+        if (error.code === 'ECONNABORTED') {
+          setError('Backend timeout. Please ensure backend is running on port 8000');
+        } else if (error.code === 'ERR_NETWORK') {
+          setError('Cannot connect to backend. Please start: cd backend && python -m uvicorn app.main:app --reload');
+        } else {
+          setError('Failed to connect to server. Please check if backend is running.');
+        }
+        
         setLoading(false);
       }
     };
@@ -44,6 +55,33 @@ export default function Home() {
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-yellow-400 mx-auto"></div>
           <p className="text-white mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-red-500/20 backdrop-blur-sm rounded-2xl p-6 border-2 border-red-500/50">
+          <div className="text-center mb-4">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h2 className="text-white text-xl font-bold mb-2">Backend Not Running</h2>
+            <p className="text-white/80 text-sm mb-4">{error}</p>
+          </div>
+          <div className="bg-black/30 rounded-lg p-4 mb-4">
+            <p className="text-white/60 text-xs mb-2">Start backend with:</p>
+            <code className="text-green-400 text-sm">
+              cd backend<br/>
+              python -m uvicorn app.main:app --reload
+            </code>
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white font-bold py-3 rounded-xl hover:shadow-xl transition-all"
+          >
+            Retry Connection
+          </button>
         </div>
       </div>
     );

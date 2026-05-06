@@ -57,9 +57,16 @@ class RedisClient:
     
     async def get_all_taken_cards(self, game_id: str) -> Dict[int, int]:
         """Get all taken cards"""
-        key = f"game:{game_id}:cards"
-        cards = await self.redis.hgetall(key)
-        return {int(k): int(v) for k, v in cards.items()}
+        if not self.redis:
+            return {}
+        
+        try:
+            key = f"game:{game_id}:cards"
+            cards = await self.redis.hgetall(key)
+            return {int(k): int(v) for k, v in cards.items()}
+        except Exception as e:
+            print(f"⚠️  Redis error in get_all_taken_cards: {e}")
+            return {}
     
     async def clear_game_cards(self, game_id: str):
         """Clear all card selections"""

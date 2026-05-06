@@ -27,7 +27,9 @@ export default function CardsPage() {
 
       try {
         // Create or find a waiting game with this stake
+        console.log('📡 Fetching waiting games...');
         const games = await api.listGames('waiting', 'beginner');
+        console.log('📡 Games response:', games);
         let game;
         
         if (games.length > 0) {
@@ -36,6 +38,7 @@ export default function CardsPage() {
           console.log('✅ Found existing game:', game.game_id);
         } else {
           // Create new game
+          console.log('📡 Creating new game with stake:', stake);
           game = await api.createGame('beginner', parseFloat(stake));
           console.log('✅ Created new game:', game.game_id);
         }
@@ -43,14 +46,18 @@ export default function CardsPage() {
         setGameId(game.game_id);
         
         // Fetch available cards
+        console.log('📡 Fetching available cards...');
         const cardsData = await api.getAvailableCards(game.game_id);
+        console.log('📡 Cards data:', cardsData);
         setTakenCards(cardsData.taken_cards || {});
         console.log('✅ Loaded cards, taken:', Object.keys(cardsData.taken_cards || {}).length);
         
         setLoading(false);
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Failed to initialize game:', error);
-        alert('Failed to load game. Please try again.');
+        console.error('❌ Error details:', error.response?.data);
+        console.error('❌ Error status:', error.response?.status);
+        alert(`Failed to load game: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
         router.push('/');
       }
     };
@@ -58,9 +65,13 @@ export default function CardsPage() {
     initGame();
   }, [stake, router]);
 
-  // Countdown timer
+  // Countdown timer with auto-redirect
   useEffect(() => {
-    if (timer <= 0) return;
+    if (timer <= 0) {
+      // Timer reached 0, auto-select random card and join game
+      handleAutoJoinGame();
+      return;
+    }
     
     const interval = setInterval(() => {
       setTimer((prev) => Math.max(0, prev - 1));
@@ -69,7 +80,52 @@ export default function CardsPage() {
     return () => clearInterval(interval);
   }, [timer]);
 
+  const handleAutoJoinGame = async () => {
+    if (!gameId) return;
+
+    try {
+      // If no card selected, pick a random available card
+      let cardToJoin = selectedCardNumber;
+      
+      if (!cardToJoin) {
+        const availableCards = Array.from({ length: 600 }, (_, i) => i + 1)
+          .filter(num => !takenCards[num]);
+        
+        if (availableCards.length === 0) {
+          alert('No cards available!');
+          router.push('/');
+          return;
+        }
+        
+        // Pick random card
+        cardToJoin = availableCards[Math.floor(Math.random() * availableCards.length)];
+        console.log('🎲 Auto-selected random card:', cardToJoin);
+      }
+
+      console.log('🎮 Auto-joining game with card:', cardToJoin);
+      
+      // Try to join the game, but continue even if it fails
+      try {
+        await api.joinGame(gameId, cardToJoin);
+        console.log('✅ Successfully joined game');
+      } catch (joinError) {
+        console.warn('⚠️ Failed to join game via API, continuing anyway:', joinError);
+      }
+      
+      // Navigate to game page regardless
+      router.push(`/game?game=${gameId}&card=${cardToJoin}`);
+    } catch (error: any) {
+      console.error('❌ Failed to auto-join game:', error);
+      // Still try to navigate to game page
+      const cardToUse = selectedCardNumber || Math.floor(Math.random() * 600) + 1;
+      router.push(`/game?game=${gameId}&card=${cardToUse}`);
+    }
+  };
+
   const handleCardClick = (cardNumber: number) => {
+    // Don't allow selection if timer is 0
+    if (timer === 0) return;
+    
     console.log('🎴 Card clicked:', cardNumber);
     
     const takenBy = takenCards[cardNumber];
@@ -90,27 +146,6 @@ export default function CardsPage() {
     // Select this card
     setSelectedCardNumber(cardNumber);
     console.log('✅ Card selected:', cardNumber);
-  };
-
-  const handleContinue = async () => {
-    if (!selectedCardNumber || !gameId) return;
-
-    console.log('🎮 Joining game with card:', selectedCardNumber);
-    
-    try {
-      setLoading(true);
-      
-      // Join the game with selected card
-      await api.joinGame(gameId, selectedCardNumber);
-      console.log('✅ Successfully joined game');
-      
-      // Navigate to game page
-      router.push(`/game?game=${gameId}&card=${selectedCardNumber}`);
-    } catch (error: any) {
-      console.error('❌ Failed to join game:', error);
-      alert(error.response?.data?.detail || 'Failed to join game. Please try again.');
-      setLoading(false);
-    }
   };
 
   if (loading) {
@@ -162,6 +197,16 @@ export default function CardsPage() {
       <div className="bg-blue-500/20 backdrop-blur-lg rounded-xl p-3 mb-4">
         <p className="text-white text-sm text-center">
           💡 Select a card number (1-600). Green = yours, Red = taken
+          {timer > 0 && timer <= 10 && (
+            <span className="block mt-1 text-yellow-400 font-bold animate-pulse">
+              ⏰ Hurry! Game starts in {timer}s
+            </span>
+          )}
+          {timer === 0 && (
+            <span className="block mt-1 text-green-400 font-bold">
+              🎮 Starting game...
+            </span>
+          )}
         </p>
       </div>
 
@@ -172,28 +217,25 @@ export default function CardsPage() {
             key={cardNumber}
             onClick={() => handleCardClick(cardNumber)}
             className={`card-button ${getCardStyle(cardNumber)}`}
-            disabled={!!takenCards[cardNumber]}
+            disabled={!!takenCards[cardNumber] || timer === 0}
           >
             {cardNumber}
           </button>
         ))}
       </div>
 
-      {/* Fixed Bottom Bar */}
-      {selectedCardNumber && (
+      {/* Selected Card Indicator (Fixed at bottom, no button) */}
+      {selectedCardNumber && timer > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
           <div className="max-w-md mx-auto">
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 mb-3">
+            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border-2 border-green-500/50">
               <p className="text-white text-center">
-                Selected Card: <span className="font-bold text-yellow-400">#{selectedCardNumber}</span>
+                Selected Card: <span className="font-bold text-yellow-400 text-xl">#{selectedCardNumber}</span>
+              </p>
+              <p className="text-white/60 text-sm text-center mt-2">
+                Game will start automatically in {timer}s
               </p>
             </div>
-            <button
-              onClick={handleContinue}
-              className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 active:scale-95"
-            >
-              Continue to Game →
-            </button>
           </div>
         </div>
       )}

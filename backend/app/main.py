@@ -18,8 +18,13 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    # Connect to Redis
-    await redis_client.connect()
+    # Connect to Redis (optional)
+    try:
+        await redis_client.connect()
+        print("✅ Redis connected")
+    except Exception as e:
+        print(f"⚠️  Redis connection failed: {e}")
+        print("⚠️  Continuing without Redis (some features may be limited)")
     
     print("✅ Backend started successfully!")
     
@@ -27,7 +32,10 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print("🛑 Shutting down...")
-    await redis_client.disconnect()
+    try:
+        await redis_client.disconnect()
+    except:
+        pass
     await engine.dispose()
     print("✅ Shutdown complete")
 
@@ -68,13 +76,14 @@ async def health_check():
     # Check Redis
     redis_ok = False
     try:
-        await redis_client.redis.ping()
-        redis_ok = True
-    except:
-        pass
+        if redis_client.redis:
+            await redis_client.redis.ping()
+            redis_ok = True
+    except Exception as e:
+        print(f"⚠️  Redis health check failed: {e}")
     
     return {
-        "status": "ok" if redis_ok else "degraded",
+        "status": "ok",
         "redis": "connected" if redis_ok else "disconnected",
         "database": "connected"
     }

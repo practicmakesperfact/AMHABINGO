@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Header, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from typing import List, Optional
 from ..database import get_db
 from ..models import Game, Player, User, GameStatus
 from ..schemas import GameResponse, PlayerResponse, GameCreate, PlayerCreate
@@ -106,8 +106,12 @@ async def get_available_cards(
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
     
-    # Get taken cards from Redis
-    taken_cards = await redis_client.get_all_taken_cards(game_id)
+    # Get taken cards from Redis (if available)
+    taken_cards = {}
+    try:
+        taken_cards = await redis_client.get_all_taken_cards(game_id)
+    except Exception as e:
+        print(f"⚠️  Redis error: {e}, using empty taken_cards")
     
     # Generate available cards list
     all_cards = set(range(1, 601))
