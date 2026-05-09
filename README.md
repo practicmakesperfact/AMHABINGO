@@ -72,9 +72,8 @@ amhabingo/
 │   │   └── useTelegram.ts
 │   └── FRONTEND_STATUS.md
 │
-├── old-bot/            # Original simple bot (archived)
-├── TESTING_GUIDE.md    # Complete testing guide
 ├── DEPLOYMENT_GUIDE.md # Production deployment
+├── prompt2.md          # Original project spec
 └── README.md           # This file
 ```
 
@@ -91,59 +90,34 @@ amhabingo/
 
 ### Backend Setup
 
-1. **Navigate to backend:**
 ```bash
 cd backend
-```
-
-2. **Create virtual environment:**
-```bash
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-```
-
-3. **Install dependencies:**
-```bash
+venv\Scripts\activate  # Windows | source venv/bin/activate (Linux/Mac)
 pip install -r requirements.txt
+cp .env.example .env  # Edit with your credentials
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-4. **Setup environment:**
-```bash
-cp .env.example .env
-# Edit .env with your credentials
-```
-
-5. **Run the server:**
-```bash
-uvicorn app.main:app --reload
-```
-
-Backend will be available at `http://localhost:8000`
+Backend: `http://localhost:8000` | API Docs: `http://localhost:8000/docs`
 
 ### Frontend Setup
 
-1. **Navigate to frontend:**
 ```bash
 cd frontend
-```
-
-2. **Install dependencies:**
-```bash
 npm install
-```
-
-3. **Setup environment:**
-```bash
-cp .env.local.example .env.local
-# Edit .env.local with backend URLs
-```
-
-4. **Run development server:**
-```bash
+cp .env.local.example .env.local  # Edit with backend URLs
 npm run dev
 ```
 
-Frontend will be available at `http://localhost:3000`
+Frontend: `http://localhost:3000`
+
+### Testing
+
+1. Start backend (port 8000)
+2. Start frontend (port 3000)
+3. Open browser: `http://localhost:3000`
+4. Test game flow: Home → Stake → Cards → Game → Winner
 
 ## 🎮 How to Play
 
@@ -333,6 +307,6 @@ Built with ❤️ for the Ethiopian gaming community
 **Status**: Backend Complete ✅ | Frontend Complete ✅ | Ready for Testing 🧪
 
 **See Also**:
-- [TESTING_GUIDE.md](TESTING_GUIDE.md) - Complete testing instructions
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Production deployment guide
 - [frontend/FRONTEND_STATUS.md](frontend/FRONTEND_STATUS.md) - Frontend implementation details
+- [prompt2.md](prompt2.md) - Original project specification
