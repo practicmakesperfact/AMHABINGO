@@ -32,3 +32,11 @@ async def get_db():
             raise
         finally:
             await session.close()
+
+# Initialize database tables
+async def init_db():
+    """Create all database tables"""
+    from . import models  # Import models to register them with Base
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("✅ Database tables created successfully!")

@@ -6,226 +6,187 @@ import { api } from '@/lib/api';
 
 export default function Home() {
   const router = useRouter();
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState({
-    activePlayers: 45000,
-    gamesPlayed: 60000,
-    winnersDaily: 500,
-  });
+  const [stats, setStats] = useState({ activePlayers: 0, gamesPlayed: 0, winnersDaily: 0 });
 
   useEffect(() => {
-    const initUser = async () => {
+    const init = async () => {
       try {
-        // Authenticate with backend
-        const userData = await api.authenticateUser();
-        console.log('✅ User authenticated:', userData);
-        
-        // Fetch platform stats (if endpoint exists)
+        // Try Telegram WebApp initData first
+        const tg = (window as any).Telegram?.WebApp;
+        const initData = tg?.initData || '';
+        const userData = await api.authenticateUser(initData || undefined);
+        setUser(userData);
+
+        // Store user in session
+        sessionStorage.setItem('user', JSON.stringify(userData));
+
+        // Load stats
         try {
-          const statsData = await api.getPlatformStats();
-          setStats(statsData);
-        } catch (e) {
-          console.log('Using default stats');
-        }
-        
-        setLoading(false);
-      } catch (error: any) {
-        console.error('❌ Failed to authenticate:', error);
-        
-        // Show user-friendly error message
-        if (error.code === 'ECONNABORTED') {
-          setError('Backend timeout. Please ensure backend is running on port 8000');
-        } else if (error.code === 'ERR_NETWORK') {
-          setError('Cannot connect to backend. Please start: cd backend && python -m uvicorn app.main:app --reload');
-        } else {
-          setError('Failed to connect to server. Please check if backend is running.');
-        }
-        
+          const s = await api.getPlatformStats();
+          setStats(s);
+        } catch {}
+      } catch (e: any) {
+        setError(e.message || 'Cannot connect to backend');
+      } finally {
         setLoading(false);
       }
     };
-
-    setTimeout(initUser, 100);
+    init();
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-yellow-400 mx-auto"></div>
-          <p className="text-white mt-4">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleStake = (stake: number) => {
+    router.push(`/cards?stake=${stake}`);
+  };
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-red-500/20 backdrop-blur-sm rounded-2xl p-6 border-2 border-red-500/50">
-          <div className="text-center mb-4">
-            <div className="text-6xl mb-4">⚠️</div>
-            <h2 className="text-white text-xl font-bold mb-2">Backend Not Running</h2>
-            <p className="text-white/80 text-sm mb-4">{error}</p>
-          </div>
-          <div className="bg-black/30 rounded-lg p-4 mb-4">
-            <p className="text-white/60 text-xs mb-2">Start backend with:</p>
-            <code className="text-green-400 text-sm">
-              cd backend<br/>
-              python -m uvicorn app.main:app --reload
-            </code>
-          </div>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white font-bold py-3 rounded-xl hover:shadow-xl transition-all"
-          >
-            Retry Connection
-          </button>
-        </div>
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1a0533 0%, #0f0b1e 50%, #0d1b3e 100%)' }}>
+      <div className="text-center">
+        <div className="w-16 h-16 border-4 border-t-purple-500 border-white/10 rounded-full animate-spin mx-auto" />
+        <p className="text-white/60 mt-4 text-sm">Loading AMHABINGO…</p>
       </div>
-    );
-  }
+    </div>
+  );
+
+  if (error) return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#0f0b1e' }}>
+      <div className="bg-red-900/30 border border-red-500/40 rounded-2xl p-6 max-w-sm w-full text-center">
+        <div className="text-4xl mb-3">⚠️</div>
+        <h2 className="text-white font-bold text-lg mb-2">Backend Offline</h2>
+        <p className="text-white/60 text-sm mb-4">{error}</p>
+        <code className="block bg-black/40 rounded-lg p-3 text-green-400 text-xs text-left mb-4">
+          cd backend<br />
+          python -m uvicorn app.main:app --reload
+        </code>
+        <button onClick={() => window.location.reload()}
+          className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl transition-all">
+          Retry
+        </button>
+      </div>
+    </div>
+  );
+
+  const mainBalance = user?.balance?.toFixed(0) ?? '0';
+  const playBalance = user?.play_balance?.toFixed(0) ?? '0';
+  const coins = user?.coins ?? 0;
+  const displayName = user?.first_name || user?.username || 'Player';
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 pb-20">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-white/10">
+    <main className="min-h-screen pb-20" style={{ background: 'linear-gradient(160deg, #2d0b5a 0%, #0f0b1e 45%, #0d1b3e 100%)' }}>
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center">
-            <span className="text-purple-900 font-bold text-xl">A</span>
+          <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-black text-lg">A</div>
+          <div>
+             <span className="text-white font-bold text-lg tracking-wide leading-tight block">AMHABINGO</span>
+             {user?.phone_number && <span className="text-white/50 text-xs block">{user.phone_number}</span>}
           </div>
-          <span className="text-white font-bold text-xl">AMHABINGO</span>
         </div>
-        <button 
-          onClick={() => router.push('/rules')}
-          className="text-white/80 hover:text-white px-4 py-2 rounded-lg border border-white/20"
-        >
+        <button onClick={() => router.push('/rules')}
+          className="flex items-center gap-1.5 text-white/70 hover:text-white border border-white/20 rounded-lg px-3 py-1.5 text-sm transition-all">
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
           Rules
         </button>
       </div>
 
-      {/* Welcome Section */}
-      <div className="text-center py-12 px-4">
-        <h1 className="text-4xl font-bold text-white mb-2">
+      {/* ── User Wallets Bar ── */}
+      {user && (
+        <div className="mx-4 mt-4 grid grid-cols-3 gap-2">
+          {/* Main Wallet */}
+          <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center justify-center border border-white/10">
+             <p className="text-white/50 text-[10px] mb-0.5">Main wallet</p>
+             <p className="text-white font-bold text-sm">{mainBalance}</p>
+          </div>
+          {/* Play Wallet */}
+          <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center justify-center border border-white/10">
+             <p className="text-white/50 text-[10px] mb-0.5">Play wallet</p>
+             <p className="text-green-400 font-bold text-sm">{playBalance}</p>
+          </div>
+          {/* Coin */}
+          <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center justify-center border border-white/10">
+             <p className="text-white/50 text-[10px] mb-0.5">Coin</p>
+             <p className="text-yellow-400 font-bold text-sm">{coins}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Welcome ── */}
+      <div className="text-center pt-8 pb-4 px-4">
+        <h1 className="text-3xl font-black text-white">
           Welcome to <span className="text-yellow-400">AMHABINGO</span>
         </h1>
+        <p className="text-white/50 text-sm mt-1">Ethiopia's #1 Real-time Bingo Game</p>
       </div>
 
-      {/* Stake Selection */}
-      <div className="px-4 mb-8">
-        <div className="max-w-2xl mx-auto bg-white/5 backdrop-blur-sm rounded-3xl p-6 border-2 border-yellow-500/50">
-          <div className="flex items-center gap-2 mb-6">
-            <div className="text-yellow-400 text-xl">▶</div>
-            <h2 className="text-white text-xl font-semibold">Choose Your Stake</h2>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              onClick={() => router.push('/cards?stake=10')}
-              className="bg-gradient-to-r from-green-500 to-green-600 text-white font-bold py-4 px-6 rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 active:scale-95 flex items-center justify-center gap-2"
-            >
-              <span className="text-2xl">▶</span>
-              <span className="text-xl">Play 10</span>
-            </button>
-            
-            <button
-              onClick={() => router.push('/cards?stake=20')}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold py-4 px-6 rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 active:scale-95 flex items-center justify-center gap-2"
-            >
-              <span className="text-2xl">▶</span>
-              <span className="text-xl">Play 20</span>
-            </button>
-
-            <button
-              onClick={() => router.push('/cards?stake=50')}
-              className="bg-gradient-to-r from-purple-500 to-purple-600 text-white font-bold py-4 px-6 rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 active:scale-95 flex items-center justify-center gap-2"
-            >
-              <span className="text-2xl">▶</span>
-              <span className="text-xl">Play 50</span>
-            </button>
-
-            <button
-              onClick={() => router.push('/cards?stake=100')}
-              className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white font-bold py-4 px-6 rounded-2xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 active:scale-95 flex items-center justify-center gap-2"
-            >
-              <span className="text-2xl">▶</span>
-              <span className="text-xl">Play 100</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Section */}
-      <div className="px-4 mb-20">
-        <div className="max-w-2xl mx-auto bg-white/5 backdrop-blur-sm rounded-3xl p-6">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-3xl font-bold text-white mb-1">
-                {stats.activePlayers.toLocaleString()}+
-              </div>
-              <div className="text-white/60 text-sm">Active Players</div>
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-white mb-1">
-                {stats.gamesPlayed.toLocaleString()}+
-              </div>
-              <div className="text-white/60 text-sm">Games Played</div>
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-white mb-1">
-                {stats.winnersDaily.toLocaleString()}+
-              </div>
-              <div className="text-white/60 text-sm">Winners Daily</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-sm border-t border-white/10">
-        <div className="grid grid-cols-4 gap-1 p-2">
-          <button
-            onClick={() => router.push('/')}
-            className="flex flex-col items-center gap-1 py-3 text-blue-400"
-          >
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+      {/* ── Stake Selection ── */}
+      <div className="px-4 mb-6">
+        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-5 border border-yellow-500/30">
+          <div className="flex items-center gap-2 mb-4">
+            <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
               <path d="M10 3.5L2 9.5v8h5v-5h6v5h5v-8l-8-6z"/>
             </svg>
-            <span className="text-xs">Game</span>
-          </button>
-          
-          <button
-            onClick={() => router.push('/history')}
-            className="flex flex-col items-center gap-1 py-3 text-white/60 hover:text-white"
-          >
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11H9V7h2v6z"/>
-            </svg>
-            <span className="text-xs">History</span>
-          </button>
-          
-          <button
-            onClick={() => router.push('/wallet')}
-            className="flex flex-col items-center gap-1 py-3 text-white/60 hover:text-white"
-          >
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4z"/>
-            </svg>
-            <span className="text-xs">Wallet</span>
-          </button>
-          
-          <button
-            onClick={() => router.push('/profile')}
-            className="flex flex-col items-center gap-1 py-3 text-white/60 hover:text-white"
-          >
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 2a4 4 0 100 8 4 4 0 000-8zm0 10c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z"/>
-            </svg>
-            <span className="text-xs">Profile</span>
-          </button>
+            <span className="text-white font-semibold">Choose Your Stake</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { amount: 10,  color: 'from-green-500 to-green-600' },
+              { amount: 20,  color: 'from-blue-500 to-blue-600' },
+              { amount: 50,  color: 'from-purple-500 to-purple-600' },
+              { amount: 100, color: 'from-yellow-500 to-orange-500' },
+            ].map(({ amount, color }) => (
+              <button key={amount} onClick={() => handleStake(amount)}
+                className={`bg-gradient-to-r ${color} text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 text-lg hover:scale-105 active:scale-95 transition-transform shadow-lg`}>
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M6.3 2.84A1.5 1.5 0 004 4.11V15.9a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.841z"/>
+                </svg>
+                Play {amount}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* ── Stats ── */}
+      <div className="px-4 mb-6">
+        <div className="bg-white/5 rounded-2xl p-5 border border-white/10">
+          <div className="grid grid-cols-3 gap-3 text-center">
+            {[
+              { label: 'Active Players', value: stats.activePlayers },
+              { label: 'Games Played',   value: stats.gamesPlayed },
+              { label: 'Winners Daily',  value: stats.winnersDaily },
+            ].map(({ label, value }) => (
+              <div key={label}>
+                <div className="text-2xl font-black text-white">{value.toLocaleString()}+</div>
+                <div className="text-white/50 text-xs mt-0.5">{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Bottom Nav ── */}
+      <nav className="bottom-nav">
+        {[
+          { label: 'Game',    icon: 'M10 3.5L2 9.5v8h5v-5h6v5h5v-8l-8-6z',               path: '/' },
+          { label: 'History', icon: 'M10 2a8 8 0 100 16A8 8 0 0010 2zm1 11H9V7h2v6z',     path: '/history' },
+          { label: 'Wallet',  icon: 'M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4z', path: '/wallet' },
+          { label: 'Profile', icon: 'M10 2a4 4 0 100 8 4 4 0 000-8zm0 10c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z', path: '/profile' },
+        ].map(({ label, icon, path }) => (
+          <button key={label} onClick={() => router.push(path)}
+            className={`nav-btn ${path === '/' ? 'active' : ''}`}>
+            <svg fill="currentColor" viewBox="0 0 20 20"><path d={icon}/></svg>
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {/* Footer */}
+      <div className="text-center text-white/20 text-xs pb-2">@amhabingo_bot</div>
     </main>
   );
 }

@@ -15,7 +15,10 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    phone_number: Optional[str] = None
     balance: float
+    play_balance: float
+    coins: int
     wins: int
     games_played: int
     created_at: datetime

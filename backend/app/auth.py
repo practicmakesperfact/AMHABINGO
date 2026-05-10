@@ -9,46 +9,35 @@ settings = get_settings()
 def verify_telegram_web_app_data(init_data: str) -> Optional[Dict[str, str]]:
     """
     Verify Telegram Web App initData
-    
-    Args:
-        init_data: The initData string from Telegram Web App
-    
-    Returns:
-        Parsed data dict if valid, None if invalid
+    Returns parsed data dict if valid, None if invalid
     """
     try:
-        # Parse the init_data
         parsed_data = dict(parse_qsl(init_data))
-        
-        # Extract hash
         received_hash = parsed_data.pop("hash", None)
         if not received_hash:
             return None
-        
-        # Create data check string
+
         data_check_arr = [f"{k}={v}" for k, v in sorted(parsed_data.items())]
         data_check_string = "\n".join(data_check_arr)
-        
-        # Calculate secret key
+
+        # Fixed: use positional args, not keyword args
         secret_key = hmac.new(
-            key=b"WebAppData",
-            msg=settings.BOT_TOKEN.encode(),
-            digestmod=hashlib.sha256
+            b"WebAppData",
+            settings.BOT_TOKEN.encode(),
+            hashlib.sha256
         ).digest()
-        
-        # Calculate hash
+
         calculated_hash = hmac.new(
-            key=secret_key,
-            msg=data_check_string.encode(),
-            digestmod=hashlib.sha256
+            secret_key,
+            data_check_string.encode(),
+            hashlib.sha256
         ).hexdigest()
-        
-        # Verify hash
+
         if calculated_hash != received_hash:
             return None
-        
+
         return parsed_data
-    
+
     except Exception as e:
         print(f"Telegram auth error: {e}")
         return None
@@ -56,28 +45,19 @@ def verify_telegram_web_app_data(init_data: str) -> Optional[Dict[str, str]]:
 
 def extract_user_from_init_data(init_data: str) -> Optional[Dict]:
     """
-    Extract user information from Telegram initData
-    
-    Returns:
-        {
-            "id": 123456789,
-            "first_name": "John",
-            "last_name": "Doe",
-            "username": "johndoe",
-            "language_code": "en"
-        }
+    Extract user information from Telegram initData.
+    Returns user dict or None.
     """
     verified_data = verify_telegram_web_app_data(init_data)
     if not verified_data:
         return None
-    
+
     import json
     user_json = verified_data.get("user")
     if not user_json:
         return None
-    
+
     try:
-        user = json.loads(user_json)
-        return user
+        return json.loads(user_json)
     except json.JSONDecodeError:
         return None

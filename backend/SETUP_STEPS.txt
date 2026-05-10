@@ -1,0 +1,93 @@
+========================================
+SETUP POSTGRESQL - STEP BY STEP
+========================================
+
+You are here: C:\Users\Administrator\Desktop\am\AMHABINGO\backend
+Virtual environment: ACTIVATED ✓
+Python version: 3.12 ✓
+PostgreSQL database: amhabingo ✓
+
+========================================
+STEP 1: Install Dependencies
+========================================
+
+Run this command:
+
+pip install -r requirements.txt
+
+This will install:
+- asyncpg (PostgreSQL driver)
+- SQLAlchemy (ORM)
+- FastAPI and all other dependencies
+
+Wait for it to complete...
+
+========================================
+STEP 2: Update .env File
+========================================
+
+Open: backend\.env
+
+Change this line:
+DATABASE_URL=postgresql+asyncpg://postgres:your_password@localhost:5432/amhabingo
+
+Replace "your_password" with your actual PostgreSQL password!
+
+Example:
+DATABASE_URL=postgresql+asyncpg://postgres:admin123@localhost:5432/amhabingo
+
+========================================
+STEP 3: Initialize Database Tables
+========================================
+
+Run this command:
+
+python init_db.py
+
+This creates all tables:
+- users
+- games
+- players
+- transactions
+
+========================================
+STEP 4: Start Backend Server
+========================================
+
+Run this command:
+
+python -m uvicorn app.main:app --reload
+
+Backend will start at: http://localhost:8000
+API docs at: http://localhost:8000/docs
+
+========================================
+TROUBLESHOOTING
+========================================
+
+Error: "asyncpg install failed"
+Solution: Install Visual Studio Build Tools
+https://visualstudio.microsoft.com/downloads/
+
+Error: "connection refused"
+Solution: Make sure PostgreSQL is running
+- Open Services (services.msc)
+- Find "postgresql-x64-XX"
+- Click "Start"
+
+Error: "password authentication failed"
+Solution: Check password in .env matches PostgreSQL password
+
+========================================
+QUICK TEST
+========================================
+
+After backend starts, test it:
+
+curl http://localhost:8000/health
+
+Should return: {"status":"healthy"}
+
+========================================
+
+Ready? Run STEP 1 now!

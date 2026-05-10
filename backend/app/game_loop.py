@@ -1,138 +1,183 @@
+"""
+Game loop manager.
+Handles: countdown → active → finish → auto-create next game.
+Works with or without Redis.
+"""
+
 import asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 from sqlalchemy import select
-from .models import Game, GameStatus
+
+from .models import Game, Player, User, GameStatus
 from .database import AsyncSessionLocal
 from .game_engine import GameManager, BingoGameEngine
 from .websocket import (
     broadcast_timer_update,
     broadcast_game_started,
     broadcast_number_called,
-    broadcast_player_won
+    broadcast_player_won,
+    manager as ws_manager,
 )
 from .redis_client import redis_client
 from .config import get_settings
 
 settings = get_settings()
 
+
 class GameLoopManager:
-    """Manages background game loops"""
-    
+    """One asyncio Task per active game."""
+
     def __init__(self):
-        self.active_loops = {}
-    
+        self.active_loops: dict[str, asyncio.Task] = {}
+
+    # ── Public API ────────────────────────────────────────────────────────────
     async def start_countdown_loop(self, game_id: str):
-        """Start countdown before game begins"""
         if game_id in self.active_loops:
             return
-        
-        task = asyncio.create_task(self._countdown_loop(game_id))
+        task = asyncio.create_task(self._run(game_id))
         self.active_loops[game_id] = task
-    
-    async def _countdown_loop(self, game_id: str):
-        """Countdown loop"""
+
+    def stop_game_loop(self, game_id: str):
+        task = self.active_loops.pop(game_id, None)
+        if task:
+            task.cancel()
+
+    # ── Internal ──────────────────────────────────────────────────────────────
+    async def _run(self, game_id: str):
+        try:
+            await self._countdown(game_id)
+            await self._game_loop(game_id)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"❌ Game loop error [{game_id}]: {e}")
+        finally:
+            self.active_loops.pop(game_id, None)
+
+    # ── Card-selection countdown ──────────────────────────────────────────────
+    async def _countdown(self, game_id: str):
         async with AsyncSessionLocal() as db:
-            game_manager = GameManager(db)
-            
-            # Get game
-            result = await db.execute(
-                select(Game).where(Game.game_id == game_id)
-            )
+            result = await db.execute(select(Game).where(Game.game_id == game_id))
             game = result.scalar_one_or_none()
-            
             if not game:
                 return
-            
-            # Start countdown
-            await game_manager.start_countdown(game_id)
-            
-            # Countdown timer
-            for seconds in range(game.countdown_seconds, 0, -1):
-                await broadcast_timer_update(game_id, seconds)
-                await asyncio.sleep(1)
-            
-            # Start game
-            await game_manager.start_game(game_id)
-            await broadcast_game_started(game_id)
-            
-            # Start game loop
-            await self._game_loop(game_id)
-    
+
+            # If already active or finished, skip countdown
+            if game.status in (GameStatus.ACTIVE, GameStatus.FINISHED):
+                return
+
+            seconds = game.countdown_seconds or settings.COUNTDOWN_SECONDS
+            game.status = GameStatus.COUNTDOWN
+            await db.commit()
+
+        try:
+            await redis_client.set_timer(game_id, seconds)
+        except Exception:
+            pass
+
+        for remaining in range(seconds, 0, -1):
+            try:
+                await redis_client.set_timer(game_id, remaining)
+            except Exception:
+                pass
+            await broadcast_timer_update(game_id, remaining)
+            await asyncio.sleep(1)
+
+    # ── Main game loop ────────────────────────────────────────────────────────
     async def _game_loop(self, game_id: str):
-        """Main game loop - calls numbers and checks for winners"""
         async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Game).where(Game.game_id == game_id))
+            game = result.scalar_one_or_none()
+            if not game:
+                return
+
+            # No players → cancel, create next
+            if game.total_players == 0:
+                game.status = GameStatus.FINISHED
+                await db.commit()
+                await asyncio.sleep(3)
+                await self._create_next_game(game_id)
+                return
+
+            # Mark ACTIVE
+            game.status = GameStatus.ACTIVE
+            game.started_at = datetime.utcnow()
+            await db.commit()
+            await broadcast_game_started(game_id)
+
             game_manager = GameManager(db)
-            
+
             while True:
-                # Get game
-                result = await db.execute(
-                    select(Game).where(Game.game_id == game_id)
-                )
-                game = result.scalar_one_or_none()
-                
-                if not game or game.status != GameStatus.ACTIVE:
+                # Refresh
+                await db.refresh(game)
+                if game.status != GameStatus.ACTIVE:
                     break
-                
+
                 # Call next number
                 number = await game_manager.call_number(game_id)
-                
                 if number is None:
-                    # All numbers called, no winner
+                    # All 75 called, no winner
                     await game_manager.finish_game(game_id, [])
+                    await broadcast_player_won(game_id, [])
                     break
-                
-                # Get category
-                category = BingoGameEngine.get_number_category(number)
-                
-                # Broadcast number
-                await broadcast_number_called(game_id, number, category)
-                
-                # Wait before checking winners
-                await asyncio.sleep(1)
-                
-                # Check for winners
+
+                letter = BingoGameEngine.get_number_category(number)
+                await broadcast_number_called(game_id, number, letter)
+
+                await asyncio.sleep(1)   # brief pause before win check
+
                 winners = await game_manager.check_winners(game_id)
-                
                 if winners:
-                    # Finish game
                     winner_ids = [w.user_id for w in winners]
-                    prize_per_winner = await game_manager.finish_game(game_id, winner_ids)
-                    
-                    # Prepare winner data
+                    prize = await game_manager.finish_game(game_id, winner_ids)
+
                     winner_data = []
-                    for winner in winners:
-                        # Get user info
-                        from .models import User
-                        user_result = await db.execute(
-                            select(User).where(User.id == winner.user_id)
-                        )
-                        user = user_result.scalar_one_or_none()
-                        
+                    for w in winners:
+                        u_res = await db.execute(select(User).where(User.id == w.user_id))
+                        u = u_res.scalar_one_or_none()
                         winner_data.append({
-                            "user_id": winner.user_id,
-                            "username": user.username if user else None,
-                            "card_number": winner.card_number,
-                            "winning_pattern": winner.winning_pattern,
-                            "prize_amount": prize_per_winner
+                            "user_id": w.user_id,
+                            "username": (u.username or u.first_name) if u else f"Player{w.user_id}",
+                            "card_number": w.card_number,
+                            "card_data": w.card_data,
+                            "winning_pattern": w.winning_pattern,
+                            "prize_amount": prize or 0,
                         })
-                    
-                    # Broadcast winners
+
                     await broadcast_player_won(game_id, winner_data)
                     break
-                
-                # Wait before calling next number
-                await asyncio.sleep(settings.GAME_INTERVAL_SECONDS)
-        
-        # Clean up
-        if game_id in self.active_loops:
-            del self.active_loops[game_id]
-    
-    def stop_game_loop(self, game_id: str):
-        """Stop a game loop"""
-        if game_id in self.active_loops:
-            task = self.active_loops[game_id]
-            task.cancel()
-            del self.active_loops[game_id]
 
-# Global game loop manager
+                await asyncio.sleep(settings.GAME_INTERVAL_SECONDS)
+
+        # Auto-create next game after short delay
+        await asyncio.sleep(6)
+        await self._create_next_game(game_id)
+
+    # ── Auto-create next game ─────────────────────────────────────────────────
+    async def _create_next_game(self, old_game_id: str):
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(Game).where(Game.game_id == old_game_id))
+                old = result.scalar_one_or_none()
+                if not old:
+                    return
+
+                gm = GameManager(db)
+                new_game = await gm.create_game(old.room, old.entry_fee)
+                print(f"✅ Next game created: {new_game.game_id} (stake={old.entry_fee})")
+
+                # Tell all connected clients
+                await ws_manager.broadcast_to_game({
+                    "type": "next_game",
+                    "data": {"game_id": new_game.game_id, "entry_fee": old.entry_fee},
+                }, old_game_id)
+
+                # Start its countdown
+                await self.start_countdown_loop(new_game.game_id)
+
+        except Exception as e:
+            print(f"❌ Failed to create next game after {old_game_id}: {e}")
+
+
+# Singleton
 game_loop_manager = GameLoopManager()

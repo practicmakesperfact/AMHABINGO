@@ -27,10 +27,13 @@ class User(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     telegram_id = Column(Integer, unique=True, nullable=False, index=True)
+    phone_number = Column(String, nullable=True)
     username = Column(String, nullable=True)
     first_name = Column(String, nullable=True)
     last_name = Column(String, nullable=True)
     balance = Column(Float, default=0.0)
+    play_balance = Column(Float, default=0.0)
+    coins = Column(Integer, default=0)
     wins = Column(Integer, default=0)
     games_played = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

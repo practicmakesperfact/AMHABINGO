@@ -1,109 +1,167 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
-}
+* { box-sizing: border-box; }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  font-family: 'Inter', sans-serif;
+  background: #0f0b1e;
+  color: #fff;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-}
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-/* Animations */
-@keyframes shimmer {
-  0% {
-    background-position: -1000px 0;
-  }
-  100% {
-    background-position: 1000px 0;
-  }
-}
-
-.animate-shimmer {
-  animation: shimmer 2s infinite;
-  background: linear-gradient(
-    to right,
-    #f6f7f8 0%,
-    #edeef1 20%,
-    #f6f7f8 40%,
-    #f6f7f8 100%
-  );
-  background-size: 1000px 100%;
-}
-
-/* Bingo card styles */
-.bingo-cell {
-  @apply aspect-square flex items-center justify-center text-lg font-bold rounded-lg transition-all duration-200;
-}
-
-.bingo-cell-marked {
-  @apply bg-green-500 text-white scale-95;
-}
-
-.bingo-cell-current {
-  @apply bg-yellow-400 text-gray-900 animate-pulse;
-}
-
-/* Card selection grid */
-.card-grid {
+/* ── Card grid (8 cols, compact) ── */
+.card-grid-8 {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 5px;
 }
 
-.card-button {
-  @apply aspect-square flex items-center justify-center text-sm font-semibold rounded-lg transition-all duration-200 cursor-pointer;
+/* ── Card buttons ── */
+.card-btn {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.12s, opacity 0.12s;
+  user-select: none;
+}
+.card-btn:active { transform: scale(0.9); }
+.card-btn.available  { background: #2a2550; color: #c8b8ff; }
+.card-btn.available:hover { background: #352e6e; }
+.card-btn.selected   { background: #22c55e; color: #fff; box-shadow: 0 0 12px #22c55e88; }
+.card-btn.taken      { background: #e44c17; color: #fff; opacity: 0.85; cursor: not-allowed; }
+
+/* ── BINGO number grid ── */
+.bingo-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
 }
 
-.card-button-available {
-  @apply bg-purple-600 text-white hover:bg-purple-700 active:scale-95;
+/* ── BINGO 5x5 card ── */
+.bingo-card {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
 }
 
-.card-button-selected {
-  @apply bg-green-500 text-white scale-95;
+.bingo-cell {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.bingo-cell.unmarked  { background: rgba(255,255,255,0.08); color: #ccc; }
+.bingo-cell.marked    { background: #e44c17; color: #fff; }
+.bingo-cell.winning   { background: #22c55e; color: #fff; box-shadow: 0 0 8px #22c55e; }
+.bingo-cell.free      { background: #7c3aed; color: #fff; }
+
+/* ── Info bar tiles ── */
+.info-tile {
+  background: rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 8px 12px;
+  flex: 1;
+}
+.info-tile-label { font-size: 10px; color: rgba(255,255,255,0.5); margin-bottom: 2px; }
+.info-tile-value { font-size: 15px; font-weight: 800; color: #fff; }
+
+/* ── Number badge ── */
+.num-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.badge-b { background: #3b82f6; }
+.badge-i { background: #8b5cf6; }
+.badge-n { background: #a855f7; }
+.badge-g { background: #22c55e; }
+.badge-o { background: #f97316; }
+
+/* ── Current number circle ── */
+.current-number-circle {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #fde68a, #f59e0b);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 40px rgba(245,158,11,0.6);
+}
+.current-number-letter { font-size: 42px; font-weight: 900; color: #6d28d9; line-height: 1; }
+.current-number-num    { font-size: 52px; font-weight: 900; color: #1e1b4b; line-height: 1; }
+
+/* ── Winner overlay ── */
+.winner-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.85);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.winner-card {
+  background: #1e1b3a;
+  border-radius: 20px;
+  padding: 28px 24px;
+  max-width: 340px;
+  width: 90%;
+  text-align: center;
 }
 
-.card-button-taken {
-  @apply bg-red-500 text-white opacity-50 cursor-not-allowed;
+/* ── Bottom nav ── */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: rgba(15,11,30,0.96);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 6px 0 8px;
 }
+.nav-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,0.45);
+  font-size: 10px; font-weight: 600;
+  padding: 4px 0;
+  transition: color 0.15s;
+}
+.nav-btn.active { color: #818cf8; }
+.nav-btn svg { width: 22px; height: 22px; }
+
+/* ── Pulse animation for current number ── */
+@keyframes ping-soft {
+  0%, 100% { box-shadow: 0 0 40px rgba(245,158,11,0.6); }
+  50%       { box-shadow: 0 0 70px rgba(245,158,11,0.9); }
+}
+.current-number-circle { animation: ping-soft 1.2s ease-in-out infinite; }
+
+/* ── Timer colors ── */
+.timer-urgent { color: #f87171; }
+.timer-normal { color: #fbbf24; }

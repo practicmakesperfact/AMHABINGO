@@ -255,7 +255,7 @@ class GameManager:
         
         # Get all players
         players_result = await self.db.execute(
-            select(Player).where(Player.game_id == game.id, Player.has_won == False)
+            select(Player).where(Player.game_id == game.id, Player.has_won.is_(False))
         )
         players = players_result.scalars().all()
         

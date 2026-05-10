@@ -1,244 +1,255 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { resetWsClient } from '@/lib/websocket';
 
-export default function CardsPage() {
+/* ── helpers ─────────────────────────────────────────────────────────── */
+function calcDerash(players: number, bet: number) {
+  return Math.floor(players * bet * 0.8); // 20% house commission
+}
+
+/* ── Inner component (needs Suspense for useSearchParams) ─────────────── */
+function CardsInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const stake = searchParams.get('stake');
-  
-  const [gameId, setGameId] = useState<string | null>(null);
-  const [selectedCardNumber, setSelectedCardNumber] = useState<number | null>(null);
-  const [takenCards, setTakenCards] = useState<Record<number, number>>({});
-  const [timer, setTimer] = useState(60);
-  const [loading, setLoading] = useState(true);
+  const params = useSearchParams();
+  const stake = Number(params.get('stake') || '10');
 
+  const [user, setUser]         = useState<any>(null);
+  const [game, setGame]         = useState<any>(null);
+  const [taken, setTaken]       = useState<Record<number, number>>({});
+  const [selected, setSelected] = useState<number | null>(null);
+  const [timer, setTimer]       = useState(60);
+  const [loading, setLoading]   = useState(true);
+  const wsRef = useRef<ReturnType<typeof resetWsClient> | null>(null);
+
+  /* ── Init ───────────────────────────────────────────────────────── */
   useEffect(() => {
-    const initGame = async () => {
-      console.log('🎴 Cards page loaded, stake:', stake);
-      
-      if (!stake) {
-        console.log('❌ No stake provided, redirecting to home');
-        router.push('/');
-        return;
-      }
-
+    const init = async () => {
       try {
-        // Create or find a waiting game with this stake
-        console.log('📡 Fetching waiting games...');
-        const games = await api.listGames('waiting', 'beginner');
-        console.log('📡 Games response:', games);
-        let game;
-        
-        if (games.length > 0) {
-          // Join existing waiting game
-          game = games[0];
-          console.log('✅ Found existing game:', game.game_id);
-        } else {
-          // Create new game
-          console.log('📡 Creating new game with stake:', stake);
-          game = await api.createGame('beginner', parseFloat(stake));
-          console.log('✅ Created new game:', game.game_id);
+        // Get or create user
+        const tg = (window as any).Telegram?.WebApp;
+        const initData = tg?.initData || '';
+        const u = await api.authenticateUser(initData || undefined);
+        setUser(u);
+        sessionStorage.setItem('user', JSON.stringify(u));
+
+        // Find waiting game at this stake or create one
+        const games = await api.listGames('waiting') as any[];
+        let g = games.find((x: any) => x.entry_fee === stake);
+
+        if (!g) {
+          // Also check countdown games
+          const cGames = await api.listGames('countdown') as any[];
+          g = cGames.find((x: any) => x.entry_fee === stake);
         }
-        
-        setGameId(game.game_id);
-        
-        // Fetch available cards
-        console.log('📡 Fetching available cards...');
-        const cardsData = await api.getAvailableCards(game.game_id);
-        console.log('📡 Cards data:', cardsData);
-        setTakenCards(cardsData.taken_cards || {});
-        console.log('✅ Loaded cards, taken:', Object.keys(cardsData.taken_cards || {}).length);
-        
+
+        if (!g) {
+          g = await api.createGame('beginner', stake);
+        }
+        setGame(g);
+        sessionStorage.setItem('currentGame', JSON.stringify(g));
+
+        // Load card statuses
+        const cardsData = await api.getAvailableCards(g.game_id) as any;
+        setTaken(cardsData.taken_cards || {});
+
         setLoading(false);
-      } catch (error: any) {
-        console.error('❌ Failed to initialize game:', error);
-        console.error('❌ Error details:', error.response?.data);
-        console.error('❌ Error status:', error.response?.status);
-        alert(`Failed to load game: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
+
+        // Connect WebSocket for real-time card updates + timer
+        const ws = resetWsClient();
+        wsRef.current = ws;
+        try {
+          await ws.connect(g.game_id, u.id);
+        } catch {}
+
+        ws.on('card_selected', (d: any) => {
+          setTaken(prev => ({ ...prev, [d.card_number]: d.user_id }));
+        });
+        ws.on('card_available', (d: any) => {
+          setTaken(prev => { const n = { ...prev }; delete n[d.card_number]; return n; });
+        });
+        ws.on('timer_update', (d: any) => {
+          setTimer(d.seconds);
+        });
+        ws.on('game_started', () => {
+          autoJoin(g.game_id, u);
+        });
+        ws.on('initial_state', (d: any) => {
+          if (d.taken_cards) setTaken(d.taken_cards);
+          if (d.game_state?.timer) setTimer(d.game_state.timer);
+        });
+
+      } catch (e: any) {
+        alert('Failed to load: ' + e.message);
         router.push('/');
       }
     };
+    init();
+    return () => wsRef.current?.disconnect();
+  }, [stake]);
 
-    initGame();
-  }, [stake, router]);
-
-  // Countdown timer with auto-redirect
+  /* ── Local countdown (fallback if WS not connected) ─────────────── */
   useEffect(() => {
-    if (timer <= 0) {
-      // Timer reached 0, auto-select random card and join game
-      handleAutoJoinGame();
-      return;
-    }
-    
-    const interval = setInterval(() => {
-      setTimer((prev) => Math.max(0, prev - 1));
-    }, 1000);
-    
-    return () => clearInterval(interval);
+    if (loading || timer <= 0) return;
+    const t = setTimeout(() => setTimer(p => Math.max(0, p - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [timer, loading]);
+
+  useEffect(() => {
+    if (timer === 0 && game && user) autoJoin(game.game_id, user);
   }, [timer]);
 
-  const handleAutoJoinGame = async () => {
-    if (!gameId) return;
-
+  /* ── Auto-join ───────────────────────────────────────────────────── */
+  const autoJoin = async (gameId: string, u: any) => {
+    let card = selected;
+    if (!card) {
+      const avail = Array.from({ length: 600 }, (_, i) => i + 1).filter(n => !taken[n]);
+      if (!avail.length) { alert('No cards available'); router.push('/'); return; }
+      card = avail[Math.floor(Math.random() * avail.length)];
+    }
     try {
-      // If no card selected, pick a random available card
-      let cardToJoin = selectedCardNumber;
-      
-      if (!cardToJoin) {
-        const availableCards = Array.from({ length: 600 }, (_, i) => i + 1)
-          .filter(num => !takenCards[num]);
-        
-        if (availableCards.length === 0) {
-          alert('No cards available!');
-          router.push('/');
-          return;
-        }
-        
-        // Pick random card
-        cardToJoin = availableCards[Math.floor(Math.random() * availableCards.length)];
-        console.log('🎲 Auto-selected random card:', cardToJoin);
-      }
-
-      console.log('🎮 Auto-joining game with card:', cardToJoin);
-      
-      // Try to join the game, but continue even if it fails
-      try {
-        await api.joinGame(gameId, cardToJoin);
-        console.log('✅ Successfully joined game');
-      } catch (joinError) {
-        console.warn('⚠️ Failed to join game via API, continuing anyway:', joinError);
-      }
-      
-      // Navigate to game page regardless
-      router.push(`/game?game=${gameId}&card=${cardToJoin}`);
-    } catch (error: any) {
-      console.error('❌ Failed to auto-join game:', error);
-      // Still try to navigate to game page
-      const cardToUse = selectedCardNumber || Math.floor(Math.random() * 600) + 1;
-      router.push(`/game?game=${gameId}&card=${cardToUse}`);
-    }
+      const tg = (window as any).Telegram?.WebApp;
+      const initData = tg?.initData || '';
+      await api.joinGame(gameId, card, initData || undefined);
+    } catch {}
+    sessionStorage.setItem('myCard', String(card));
+    sessionStorage.setItem('myUserId', String(u?.id ?? 0));
+    router.push(`/game?game=${gameId}&card=${card}`);
   };
 
-  const handleCardClick = (cardNumber: number) => {
-    // Don't allow selection if timer is 0
+  const handleCardClick = (n: number) => {
     if (timer === 0) return;
-    
-    console.log('🎴 Card clicked:', cardNumber);
-    
-    const takenBy = takenCards[cardNumber];
-
-    // If card is taken by someone else, do nothing
-    if (takenBy) {
-      alert('This card is already taken!');
-      return;
-    }
-
-    // If this card is selected by current user, unselect it
-    if (selectedCardNumber === cardNumber) {
-      setSelectedCardNumber(null);
-      console.log('❌ Card unselected');
-      return;
-    }
-
-    // Select this card
-    setSelectedCardNumber(cardNumber);
-    console.log('✅ Card selected:', cardNumber);
+    if (taken[n] && taken[n] !== user?.id) return;
+    if (selected === n) { setSelected(null); return; }
+    setSelected(n);
+    // Optimistically broadcast via WS
+    wsRef.current?.send('select_card', { card_number: n });
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-yellow-400 mx-auto"></div>
-          <p className="text-white mt-4">Loading cards...</p>
-        </div>
+  /* ── Card color ──────────────────────────────────────────────────── */
+  const cardClass = (n: number) => {
+    if (n === selected) return 'card-btn selected';
+    if (taken[n])       return 'card-btn taken';
+    return 'card-btn available';
+  };
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: '#0f0b1e' }}>
+      <div className="text-center">
+        <div className="w-14 h-14 border-4 border-t-purple-500 border-white/10 rounded-full animate-spin mx-auto" />
+        <p className="text-white/60 mt-3 text-sm">Loading cards…</p>
       </div>
-    );
-  }
+    </div>
+  );
 
-  const getCardStyle = (cardNumber: number) => {
-    const takenBy = takenCards[cardNumber];
-    
-    if (selectedCardNumber === cardNumber) {
-      return 'card-button-selected';
-    }
-    
-    if (takenBy) {
-      return 'card-button-taken';
-    }
-    
-    return 'card-button-available';
-  };
+  const derash  = calcDerash(game?.total_players ?? 0, stake);
+  const mainBalance = (user?.balance ?? 0).toFixed(0);
+  const playBalance = (user?.play_balance ?? 0).toFixed(0);
+  const timerClass = timer <= 10 ? 'timer-urgent' : 'timer-normal';
 
   return (
-    <main className="min-h-screen p-4 pb-24 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      {/* Header */}
-      <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-4 mb-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-white font-semibold">Game #{gameId?.slice(-8)}</p>
-            <p className="text-gray-300 text-sm">
-              Select your card
-            </p>
+    <div className="h-screen flex flex-col" style={{ background: '#0f0b1e' }}>
+
+      {/* ── Top bar ── */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 flex-shrink-0">
+        {/* Back */}
+        <button onClick={() => router.push('/')}
+          className="flex items-center gap-1 text-white/70 hover:text-white bg-white/10 rounded-lg px-2 py-1.5 text-xs transition-all">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+          </svg>
+          Back
+        </button>
+
+        {/* Wallets */}
+        <div className="flex items-center gap-2 flex-1 justify-center">
+          <div className="bg-white/5 rounded-lg px-2 py-1 text-center border border-white/10">
+            <p className="text-white/40 text-[9px]">Main wallet</p>
+            <p className="text-white font-bold text-xs">{mainBalance}</p>
           </div>
-          <div className="text-right">
-            <p className="text-yellow-400 font-bold text-2xl">
-              {timer}s
-            </p>
-            <p className="text-gray-300 text-sm">Time left</p>
+          <div className="bg-white/5 rounded-lg px-2 py-1 text-center border border-white/10">
+            <p className="text-white/40 text-[9px]">Play wallet</p>
+            <p className="text-green-400 font-bold text-xs">{playBalance}</p>
+          </div>
+          <div className="bg-white/5 rounded-lg px-2 py-1 text-center border border-white/10">
+            <p className="text-white/40 text-[9px]">Stake</p>
+            <p className="text-yellow-400 font-bold text-xs">{stake}</p>
+          </div>
+        </div>
+
+        {/* Timer */}
+        <div className="flex items-center gap-1.5 bg-gray-800 rounded-lg px-2 py-1.5 border border-white/10">
+          <div className="text-center">
+            <p className="text-white/50 text-[9px]">Starts in</p>
+            <p className={`font-black text-xs ${timerClass}`}>{timer}s</p>
           </div>
         </div>
       </div>
 
-      {/* Instructions */}
-      <div className="bg-blue-500/20 backdrop-blur-lg rounded-xl p-3 mb-4">
-        <p className="text-white text-sm text-center">
-          💡 Select a card number (1-600). Green = yours, Red = taken
+      {/* ── Game info row ── */}
+      <div className="flex gap-2 px-3 py-2 flex-shrink-0">
+        {[
+          { label: 'Game ID', value: game?.game_id?.slice(-8).toUpperCase() ?? '—' },
+          { label: 'Players', value: game?.total_players ?? 0 },
+          { label: 'Derash',  value: derash },
+        ].map(({ label, value }) => (
+          <div key={label} className="info-tile">
+            <div className="info-tile-label">{label}</div>
+            <div className="info-tile-value">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Hint ── */}
+      <div className="px-3 flex-shrink-0">
+        <p className="text-white/40 text-xs text-center py-1">
+          🟢 Yours &nbsp;|&nbsp; 🔴 Taken &nbsp;|&nbsp; Select a card (1–600)
           {timer > 0 && timer <= 10 && (
-            <span className="block mt-1 text-yellow-400 font-bold animate-pulse">
-              ⏰ Hurry! Game starts in {timer}s
-            </span>
-          )}
-          {timer === 0 && (
-            <span className="block mt-1 text-green-400 font-bold">
-              🎮 Starting game...
-            </span>
+            <span className="text-red-400 font-bold animate-pulse"> — Hurry! {timer}s</span>
           )}
         </p>
       </div>
 
-      {/* Card Grid */}
-      <div className="card-grid mb-4">
-        {Array.from({ length: 600 }, (_, i) => i + 1).map((cardNumber) => (
-          <button
-            key={cardNumber}
-            onClick={() => handleCardClick(cardNumber)}
-            className={`card-button ${getCardStyle(cardNumber)}`}
-            disabled={!!takenCards[cardNumber] || timer === 0}
-          >
-            {cardNumber}
-          </button>
-        ))}
+      {/* ── Card grid ── */}
+      <div className="flex-1 overflow-y-auto px-3 pb-20">
+        <div className="card-grid-8">
+          {Array.from({ length: 600 }, (_, i) => i + 1).map(n => (
+            <button key={n} className={cardClass(n)}
+              disabled={!!(taken[n] && taken[n] !== user?.id) || timer === 0}
+              onClick={() => handleCardClick(n)}>
+              {n}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Selected Card Indicator (Fixed at bottom, no button) */}
-      {selectedCardNumber && timer > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
-          <div className="max-w-md mx-auto">
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border-2 border-green-500/50">
-              <p className="text-white text-center">
-                Selected Card: <span className="font-bold text-yellow-400 text-xl">#{selectedCardNumber}</span>
-              </p>
-              <p className="text-white/60 text-sm text-center mt-2">
-                Game will start automatically in {timer}s
-              </p>
-            </div>
+      {/* ── Selected card bottom bar ── */}
+      {selected && timer > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-black/90 border-t border-green-500/40 px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-white/60 text-xs">Selected Card</p>
+            <p className="text-yellow-400 font-black text-xl">#{selected}</p>
           </div>
+          <button onClick={() => autoJoin(game.game_id, user)}
+            className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-xl text-sm transition-all active:scale-95">
+            Join Now →
+          </button>
         </div>
       )}
-    </main>
+    </div>
+  );
+}
+
+export default function CardsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#0f0b1e' }}>
+        <div className="w-14 h-14 border-4 border-t-purple-500 border-white/10 rounded-full animate-spin" />
+      </div>
+    }>
+      <CardsInner />
+    </Suspense>
   );
 }
