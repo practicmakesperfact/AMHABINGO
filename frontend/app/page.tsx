@@ -94,23 +94,49 @@ export default function Home() {
         </button>
       </div>
 
+      {/* ── Not-registered banner ── */}
+      {user && !user.phone_number && (
+        <div className="mx-4 mt-3 bg-yellow-500/15 border border-yellow-500/40 rounded-xl px-4 py-2.5 flex items-center gap-3">
+          <span className="text-2xl">📋</span>
+          <div className="flex-1">
+            <p className="text-yellow-400 font-bold text-sm">Register to get 10 ETB Bonus!</p>
+            <p className="text-yellow-200/70 text-xs">Open bot and tap <strong>Register 📋</strong> to share your contact.</p>
+          </div>
+        </div>
+      )}
+
       {/* ── User Wallets Bar ── */}
       {user && (
-        <div className="mx-4 mt-4 grid grid-cols-3 gap-2">
+        <div className="mx-4 mt-3 grid grid-cols-3 gap-2">
           {/* Main Wallet */}
-          <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center justify-center border border-white/10">
-             <p className="text-white/50 text-[10px] mb-0.5">Main wallet</p>
-             <p className="text-white font-bold text-sm">{mainBalance}</p>
+          <div className="bg-white/5 rounded-xl p-2.5 flex items-center gap-2 border border-white/10">
+            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4z"/></svg>
+            </div>
+            <div>
+              <p className="text-white/50 text-[10px]">Main wallet</p>
+              <p className="text-white font-bold text-sm leading-tight">{mainBalance}</p>
+            </div>
           </div>
           {/* Play Wallet */}
-          <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center justify-center border border-white/10">
-             <p className="text-white/50 text-[10px] mb-0.5">Play wallet</p>
-             <p className="text-green-400 font-bold text-sm">{playBalance}</p>
+          <div className="bg-white/5 rounded-xl p-2.5 flex items-center gap-2 border border-green-500/20">
+            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm1 6.5V7a1 1 0 10-2 0v2H7a1 1 0 000 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2z"/></svg>
+            </div>
+            <div>
+              <p className="text-white/50 text-[10px]">Play wallet</p>
+              <p className="text-green-400 font-bold text-sm leading-tight">{playBalance}</p>
+            </div>
           </div>
           {/* Coin */}
-          <div className="bg-white/5 rounded-xl p-2 flex flex-col items-center justify-center border border-white/10">
-             <p className="text-white/50 text-[10px] mb-0.5">Coin</p>
-             <p className="text-yellow-400 font-bold text-sm">{coins}</p>
+          <div className="bg-white/5 rounded-xl p-2.5 flex items-center gap-2 border border-yellow-500/20">
+            <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0">
+              <span className="text-white text-xs font-black">$</span>
+            </div>
+            <div>
+              <p className="text-white/50 text-[10px]">Coin</p>
+              <p className="text-yellow-400 font-bold text-sm leading-tight">{coins}</p>
+            </div>
           </div>
         </div>
       )}

@@ -131,3 +131,52 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "gamesPlayed": total_games or 0,
         "winnersDaily": total_wins or 0,
     }
+
+
+# ─── User Game History ────────────────────────────────────────────────────────
+@router.get("/history")
+async def get_user_history(
+    init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return last 20 games the authenticated user joined."""
+    from ..models import Player, Game
+
+    # Resolve user (support demo mode)
+    if not init_data:
+        user_result = await db.execute(select(User).where(User.telegram_id == 123456789))
+    else:
+        user_data = extract_user_from_init_data(init_data)
+        if not user_data:
+            raise HTTPException(status_code=401, detail="Invalid Telegram data")
+        user_result = await db.execute(select(User).where(User.telegram_id == user_data["id"]))
+
+    user = user_result.scalar_one_or_none()
+    if not user:
+        return []
+
+    players_result = await db.execute(
+        select(Player)
+        .where(Player.user_id == user.id)
+        .order_by(Player.joined_at.desc())
+        .limit(20)
+    )
+    players = players_result.scalars().all()
+
+    history = []
+    for p in players:
+        game_result = await db.execute(select(Game).where(Game.id == p.game_id))
+        game = game_result.scalar_one_or_none()
+        if game:
+            history.append({
+                "game_id": game.game_id,
+                "status": game.status.value,
+                "entry_fee": game.entry_fee,
+                "prize_pool": game.prize_pool,
+                "total_players": game.total_players,
+                "card_number": p.card_number,
+                "has_won": p.has_won,
+                "winning_pattern": p.winning_pattern,
+                "joined_at": p.joined_at.isoformat() if p.joined_at else None,
+            })
+    return history

@@ -76,7 +76,7 @@ app.add_middleware(
     allow_origins=["*"],          # tighten in production
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],          # includes ngrok-skip-browser-warning
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
