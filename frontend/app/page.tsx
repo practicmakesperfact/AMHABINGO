@@ -74,19 +74,16 @@ export default function Home() {
   const displayName = user?.first_name || user?.username || 'Player';
 
   return (
-    <main className="min-h-screen pb-20" style={{ background: 'linear-gradient(160deg, #2d0b5a 0%, #0f0b1e 45%, #0d1b3e 100%)' }}>
+    <main className="min-h-screen pb-20" style={{ background: 'linear-gradient(135deg, #6B21A8 0%, #1E293B 50%, #0F172A 100%)' }}>
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+      <div className="flex items-center justify-between px-5 py-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center font-black text-lg">A</div>
-          <div>
-             <span className="text-white font-bold text-lg tracking-wide leading-tight block">AMHABINGO</span>
-             {user?.phone_number && <span className="text-white/50 text-xs block">{user.phone_number}</span>}
-          </div>
+          <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center font-black text-xl text-purple-700">A</div>
+          <span className="text-white font-bold text-xl tracking-wide">AMHABINGO</span>
         </div>
         <button onClick={() => router.push('/rules')}
-          className="flex items-center gap-1.5 text-white/70 hover:text-white border border-white/20 rounded-lg px-3 py-1.5 text-sm transition-all">
+          className="flex items-center gap-2 text-white/90 hover:text-white bg-white/10 backdrop-blur-sm rounded-lg px-4 py-2 text-sm transition-all border border-white/20">
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
           </svg>
@@ -94,101 +91,67 @@ export default function Home() {
         </button>
       </div>
 
-      {/* ── Not-registered banner ── */}
-      {user && !user.phone_number && (
-        <div className="mx-4 mt-3 bg-yellow-500/15 border border-yellow-500/40 rounded-xl px-4 py-2.5 flex items-center gap-3">
-          <span className="text-2xl">📋</span>
-          <div className="flex-1">
-            <p className="text-yellow-400 font-bold text-sm">Register to get 10 ETB Bonus!</p>
-            <p className="text-yellow-200/70 text-xs">Open bot and tap <strong>Register 📋</strong> to share your contact.</p>
-          </div>
-        </div>
-      )}
-
-      {/* ── User Wallets Bar ── */}
-      {user && (
-        <div className="mx-4 mt-3 grid grid-cols-3 gap-2">
-          {/* Main Wallet */}
-          <div className="bg-white/5 rounded-xl p-2.5 flex items-center gap-2 border border-white/10">
-            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4z"/></svg>
-            </div>
-            <div>
-              <p className="text-white/50 text-[10px]">Main wallet</p>
-              <p className="text-white font-bold text-sm leading-tight">{mainBalance}</p>
-            </div>
-          </div>
-          {/* Play Wallet */}
-          <div className="bg-white/5 rounded-xl p-2.5 flex items-center gap-2 border border-green-500/20">
-            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm1 6.5V7a1 1 0 10-2 0v2H7a1 1 0 000 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2z"/></svg>
-            </div>
-            <div>
-              <p className="text-white/50 text-[10px]">Play wallet</p>
-              <p className="text-green-400 font-bold text-sm leading-tight">{playBalance}</p>
-            </div>
-          </div>
-          {/* Coin */}
-          <div className="bg-white/5 rounded-xl p-2.5 flex items-center gap-2 border border-yellow-500/20">
-            <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-xs font-black">$</span>
-            </div>
-            <div>
-              <p className="text-white/50 text-[10px]">Coin</p>
-              <p className="text-yellow-400 font-bold text-sm leading-tight">{coins}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Welcome ── */}
-      <div className="text-center pt-8 pb-4 px-4">
-        <h1 className="text-3xl font-black text-white">
+      <div className="text-center pt-16 pb-12 px-4">
+        <h1 className="text-4xl font-black text-white mb-2">
           Welcome to <span className="text-yellow-400">AMHABINGO</span>
         </h1>
-        <p className="text-white/50 text-sm mt-1">Ethiopia's #1 Real-time Bingo Game</p>
       </div>
 
-      {/* ── Stake Selection ── */}
-      <div className="px-4 mb-6">
-        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-5 border border-yellow-500/30">
-          <div className="flex items-center gap-2 mb-4">
+      {/* ── Stake Selection Box ── */}
+      <div className="px-6 mb-12">
+        <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm rounded-3xl p-6 border-2 border-yellow-600/40 shadow-2xl">
+          <div className="flex items-center justify-center gap-2 mb-6">
             <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 3.5L2 9.5v8h5v-5h6v5h5v-8l-8-6z"/>
+              <path d="M6.3 2.84A1.5 1.5 0 004 4.11V15.9a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.841z"/>
             </svg>
-            <span className="text-white font-semibold">Choose Your Stake</span>
+            <span className="text-white font-bold text-lg">Choose Your Stake</span>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { amount: 10,  color: 'from-green-500 to-green-600' },
-              { amount: 20,  color: 'from-blue-500 to-blue-600' },
-              { amount: 50,  color: 'from-purple-500 to-purple-600' },
-              { amount: 100, color: 'from-yellow-500 to-orange-500' },
-            ].map(({ amount, color }) => (
-              <button key={amount} onClick={() => handleStake(amount)}
-                className={`bg-gradient-to-r ${color} text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 text-lg hover:scale-105 active:scale-95 transition-transform shadow-lg`}>
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M6.3 2.84A1.5 1.5 0 004 4.11V15.9a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.841z"/>
-                </svg>
-                Play {amount}
-              </button>
-            ))}
+          <div className="grid grid-cols-2 gap-4">
+            <button onClick={() => handleStake(10)}
+              className="bg-gradient-to-r from-emerald-500 to-green-600 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-2 text-xl hover:scale-105 active:scale-95 transition-transform shadow-xl">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6.3 2.84A1.5 1.5 0 004 4.11V15.9a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.841z"/>
+              </svg>
+              Play 10
+            </button>
+            <button onClick={() => handleStake(20)}
+              className="bg-gradient-to-r from-blue-500 to-blue-700 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-2 text-xl hover:scale-105 active:scale-95 transition-transform shadow-xl">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6.3 2.84A1.5 1.5 0 004 4.11V15.9a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.841z"/>
+              </svg>
+              Play 20
+            </button>
+            <button onClick={() => handleStake(50)}
+              className="bg-gradient-to-r from-purple-500 to-purple-700 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-2 text-xl hover:scale-105 active:scale-95 transition-transform shadow-xl">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6.3 2.84A1.5 1.5 0 004 4.11V15.9a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.841z"/>
+              </svg>
+              Play 50
+            </button>
+            <button onClick={() => handleStake(100)}
+              className="bg-gradient-to-r from-orange-500 to-orange-700 text-white font-bold py-5 rounded-2xl flex items-center justify-center gap-2 text-xl hover:scale-105 active:scale-95 transition-transform shadow-xl">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M6.3 2.84A1.5 1.5 0 004 4.11V15.9a1.5 1.5 0 002.3 1.27l9.344-5.891a1.5 1.5 0 000-2.538L6.3 2.841z"/>
+              </svg>
+              Play 100
+            </button>
           </div>
         </div>
       </div>
 
       {/* ── Stats ── */}
-      <div className="px-4 mb-6">
-        <div className="bg-white/5 rounded-2xl p-5 border border-white/10">
-          <div className="grid grid-cols-3 gap-3 text-center">
+      <div className="px-6 mb-8">
+        <div className="bg-gradient-to-br from-slate-800/40 to-slate-900/40 backdrop-blur-sm rounded-3xl p-8 border border-white/10">
+          <div className="grid grid-cols-3 gap-6 text-center">
             {[
               { label: 'Active Players', value: stats.activePlayers },
               { label: 'Games Played',   value: stats.gamesPlayed },
               { label: 'Winners Daily',  value: stats.winnersDaily },
             ].map(({ label, value }) => (
               <div key={label}>
-                <div className="text-2xl font-black text-white">{value.toLocaleString()}+</div>
-                <div className="text-white/50 text-xs mt-0.5">{label}</div>
+                <div className="text-3xl font-black text-white mb-1">{value.toLocaleString()}+</div>
+                <div className="text-white/60 text-xs">{label}</div>
               </div>
             ))}
           </div>
@@ -196,7 +159,7 @@ export default function Home() {
       </div>
 
       {/* ── Bottom Nav ── */}
-      <nav className="bottom-nav">
+      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-white/10 px-2 py-3 grid grid-cols-4 gap-1">
         {[
           { label: 'Game',    icon: 'M10 3.5L2 9.5v8h5v-5h6v5h5v-8l-8-6z',               path: '/' },
           { label: 'History', icon: 'M10 2a8 8 0 100 16A8 8 0 0010 2zm1 11H9V7h2v6z',     path: '/history' },
@@ -204,15 +167,16 @@ export default function Home() {
           { label: 'Profile', icon: 'M10 2a4 4 0 100 8 4 4 0 000-8zm0 10c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z', path: '/profile' },
         ].map(({ label, icon, path }) => (
           <button key={label} onClick={() => router.push(path)}
-            className={`nav-btn ${path === '/' ? 'active' : ''}`}>
-            <svg fill="currentColor" viewBox="0 0 20 20"><path d={icon}/></svg>
-            {label}
+            className={`flex flex-col items-center gap-1 py-2 rounded-lg transition-all ${
+              path === '/' 
+                ? 'text-blue-400' 
+                : 'text-white/50 hover:text-white/80'
+            }`}>
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d={icon}/></svg>
+            <span className="text-xs font-medium">{label}</span>
           </button>
         ))}
       </nav>
-
-      {/* Footer */}
-      <div className="text-center text-white/20 text-xs pb-2">@amhabingo_bot</div>
     </main>
   );
 }
