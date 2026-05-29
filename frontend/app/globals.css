@@ -69,28 +69,28 @@ body {
 .bingo-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
+  gap: 6px;
 }
 
 /* ── BINGO 5x5 card ── */
 .bingo-card {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 3px;
+  gap: 4px;
 }
 
 .bingo-cell {
   aspect-ratio: 1;
-  border-radius: 6px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 14px;
   transition: all 0.2s;
 }
 .bingo-cell.unmarked  { background: rgba(255,255,255,0.08); color: #ccc; }
-.bingo-cell.marked    { background: #e44c17; color: #fff; }
+.bingo-cell.marked    { background: #ea580c; color: #fff; }
 .bingo-cell.winning   { background: #22c55e; color: #fff; box-shadow: 0 0 8px #22c55e; }
 .bingo-cell.free      { background: #7c3aed; color: #fff; }
 
@@ -109,11 +109,12 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+  min-width: 60px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 12px;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 14px;
   flex-shrink: 0;
 }
 .badge-b { background: #3b82f6; }

@@ -249,27 +249,28 @@ function GameInner() {
       </div>
 
       {/* ── Main body ── */}
-      <div className="flex-1 flex gap-2 px-2 pb-2 overflow-hidden min-h-0">
+      <div className="flex-1 flex gap-3 px-3 pb-2 overflow-hidden min-h-0">
 
-        {/* Left: 75-number BINGO grid */}
-        <div className="w-[210px] flex flex-col bg-gray-900/40 rounded-xl overflow-hidden flex-shrink-0">
+        {/* Left: 75-number BINGO grid - ALL 15 ROWS VISIBLE */}
+        <div className="flex flex-col bg-slate-800/40 rounded-2xl flex-shrink-0 border border-slate-700/50 p-2" style={{ width: '240px' }}>
           {/* B I N G O headers */}
-          <div className="grid grid-cols-5 gap-1 p-2 flex-shrink-0">
+          <div className="grid grid-cols-5 gap-1.5 mb-2 flex-shrink-0">
             {BINGO.map(l => (
               <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1.5 rounded-lg text-sm`}>{l}</div>
             ))}
           </div>
-          {/* Numbers */}
-          <div className="grid grid-cols-5 gap-1 px-2 pb-2 overflow-y-auto flex-1">
+          {/* Numbers - ALL 15 ROWS, calculated height */}
+          <div className="grid grid-cols-5 gap-1.5 flex-1">
             {numColumns.map((col, ci) => (
-              <div key={ci} className="flex flex-col gap-1">
+              <div key={ci} className="flex flex-col gap-1.5">
                 {col.map(n => (
                   <div key={n}
-                    className={`aspect-square rounded-md flex items-center justify-center text-xs font-bold transition-all ${
+                    className={`flex items-center justify-center text-xs font-bold rounded-lg transition-all ${
                       calledNums.includes(n)
-                        ? 'bg-orange-500 text-white'
-                        : 'bg-gray-700/60 text-white/80'
-                    }`}>
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-slate-700/70 text-white/80'
+                    }`}
+                    style={{ height: 'calc((100% - 56px) / 15)' }}>
                     {n}
                   </div>
                 ))}
@@ -279,10 +280,10 @@ function GameInner() {
         </div>
 
         {/* Right panel */}
-        <div className="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+        <div className="flex-1 flex flex-col gap-3 overflow-hidden min-w-0">
 
           {/* Recent numbers row */}
-          <div className="flex items-center gap-2 bg-gray-900/40 rounded-xl px-3 py-2 flex-shrink-0">
+          <div className="flex items-center gap-2 bg-slate-800/40 rounded-2xl px-4 py-3 flex-shrink-0 border border-slate-700/50">
             <div className="flex gap-2 overflow-x-auto flex-1">
               {recentNums.length === 0 && (
                 <span className="text-white/30 text-xs">Waiting for numbers…</span>
@@ -290,7 +291,7 @@ function GameInner() {
               {recentNums.map((n, i) => {
                 const l = getLetter(n);
                 return (
-                  <div key={i} className={`num-badge ${LETTER_COLORS[l]} text-white font-black text-xs`}>
+                  <div key={i} className={`num-badge ${LETTER_COLORS[l]} text-white font-black text-sm px-4 py-2 rounded-xl whitespace-nowrap`}>
                     {l}-{n}
                   </div>
                 );
@@ -299,7 +300,7 @@ function GameInner() {
           </div>
 
           {/* Current number */}
-          <div className="flex-1 bg-gray-900/40 rounded-xl p-3 flex flex-col items-center justify-center gap-3 overflow-hidden">
+          <div className="flex-1 bg-slate-800/40 rounded-2xl p-4 flex flex-col items-center justify-center gap-4 overflow-hidden border border-slate-700/50">
             {currentNum ? (
               <div className="current-number-circle">
                 <span className="current-number-letter">{getLetter(currentNum)}</span>
@@ -308,18 +309,18 @@ function GameInner() {
             ) : (
               <div className="flex gap-2">
                 {[0, 1, 2].map(i => (
-                  <div key={i} className="w-2.5 h-2.5 bg-purple-400 rounded-full animate-bounce"
+                  <div key={i} className="w-3 h-3 bg-purple-400 rounded-full animate-bounce"
                     style={{ animationDelay: `${i * 150}ms` }} />
                 ))}
               </div>
             )}
 
             {/* Automatic toggle */}
-            <div className="w-full bg-gray-800/60 rounded-xl px-4 py-2 flex items-center justify-between">
-              <span className="text-white/70 text-sm">Automatic</span>
+            <div className="w-full bg-slate-700/60 rounded-xl px-5 py-3 flex items-center justify-between">
+              <span className="text-white/70 text-base font-semibold">Automatic</span>
               <button onClick={() => setAutomatic(a => !a)}
-                className={`relative w-11 h-6 rounded-full transition-colors ${automatic ? 'bg-green-500' : 'bg-gray-600'}`}>
-                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${automatic ? 'translate-x-5' : ''}`} />
+                className={`relative w-14 h-7 rounded-full transition-colors ${automatic ? 'bg-green-500' : 'bg-gray-600'}`}>
+                <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${automatic ? 'translate-x-7' : ''}`} />
               </button>
             </div>
 
@@ -328,9 +329,9 @@ function GameInner() {
               <div className="w-full">
                 <p className="text-white/50 text-xs text-center mb-2">Your Card — #{cardNum}</p>
                 {/* 5×5 bingo card */}
-                <div className="grid grid-cols-5 gap-1.5">
+                <div className="grid grid-cols-5 gap-2">
                   {BINGO.map(l => (
-                    <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1 rounded text-xs`}>{l}</div>
+                    <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1.5 rounded text-sm`}>{l}</div>
                   ))}
                   {Array.from({ length: 5 }, (_, row) =>
                     Array.from({ length: 5 }, (_, col) => {
@@ -339,7 +340,7 @@ function GameInner() {
                       const isMarked = !isFree && calledNums.includes(val);
                       return (
                         <div key={`${row}-${col}`}
-                          className={`bingo-cell text-xs ${isFree ? 'free' : isMarked ? 'marked' : 'unmarked'}`}>
+                          className={`bingo-cell text-sm ${isFree ? 'free' : isMarked ? 'marked' : 'unmarked'}`}>
                           {isFree ? '✦' : val}
                         </div>
                       );
@@ -348,9 +349,9 @@ function GameInner() {
                 </div>
               </div>
             ) : (
-              <div className="w-full bg-gray-800/60 rounded-xl p-4 text-center">
-                <h3 className="text-white font-bold text-base mb-1">Watching Only</h3>
-                <p className="text-white/50 text-xs leading-relaxed">
+              <div className="w-full bg-slate-700/60 rounded-xl p-5 text-center">
+                <h3 className="text-white font-bold text-lg mb-2">Watching Only</h3>
+                <p className="text-white/50 text-sm leading-relaxed">
                   የዚህ ዙር ጨዋታ ተጫዋች አይደሉም።<br />
                   አዲስ ዙር እስኪጀምር እዚሁ ይቆዩ።
                 </p>
