@@ -24,28 +24,46 @@ body {
 .card-grid-8 {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  gap: 5px;
+  gap: 12px;
 }
 
 /* ── Card buttons ── */
 .card-btn {
   aspect-ratio: 1;
-  border-radius: 8px;
-  font-size: 11px;
+  border-radius: 16px;
+  font-size: 15px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  border: none;
-  transition: transform 0.12s, opacity 0.12s;
+  border: 2px solid transparent;
+  transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
   user-select: none;
 }
-.card-btn:active { transform: scale(0.9); }
-.card-btn.available  { background: #2a2550; color: #c8b8ff; }
-.card-btn.available:hover { background: #352e6e; }
-.card-btn.selected   { background: #22c55e; color: #fff; box-shadow: 0 0 12px #22c55e88; }
-.card-btn.taken      { background: #e44c17; color: #fff; opacity: 0.85; cursor: not-allowed; }
+.card-btn:active { transform: scale(0.95); }
+.card-btn.available  { 
+  background: rgba(51, 65, 85, 0.8); 
+  color: rgba(255, 255, 255, 0.9); 
+  border-color: rgba(71, 85, 105, 0.6);
+}
+.card-btn.available:hover { 
+  background: rgba(71, 85, 105, 0.9); 
+  border-color: rgba(100, 116, 139, 0.7);
+}
+.card-btn.selected   { 
+  background: #22c55e; 
+  color: #fff; 
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+  transform: scale(1.05);
+  border-color: #22c55e;
+}
+.card-btn.taken      { 
+  background: #ea580c; 
+  color: #fff; 
+  cursor: not-allowed;
+  border-color: #ea580c;
+}
 
 /* ── BINGO number grid ── */
 .bingo-grid {

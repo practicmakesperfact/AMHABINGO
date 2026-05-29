@@ -150,90 +150,137 @@ function CardsInner() {
   const timerClass = timer <= 10 ? 'timer-urgent' : 'timer-normal';
 
   return (
-    <div className="h-screen flex flex-col" style={{ background: '#0f0b1e' }}>
+    <div className="h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #6B21A8 0%, #1E293B 50%, #0F172A 100%)' }}>
 
       {/* ── Top bar ── */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 flex-shrink-0">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 flex-shrink-0">
         {/* Back */}
         <button onClick={() => router.push('/')}
-          className="flex items-center gap-1 text-white/70 hover:text-white bg-white/10 rounded-lg px-2 py-1.5 text-xs transition-all">
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          className="flex items-center gap-2 text-white/90 hover:text-white bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 text-sm transition-all border border-white/20">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
           </svg>
           Back
         </button>
 
         {/* Wallets */}
-        <div className="flex items-center gap-2 flex-1 justify-center">
-          <div className="bg-white/5 rounded-lg px-2 py-1 text-center border border-white/10">
-            <p className="text-white/40 text-[9px]">Main wallet</p>
-            <p className="text-white font-bold text-xs">{mainBalance}</p>
+        <div className="flex items-center gap-2">
+          <div className="bg-slate-800/60 backdrop-blur-sm rounded-xl px-3 py-2 flex items-center gap-2 border border-white/10">
+            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4z"/></svg>
+            </div>
+            <div>
+              <p className="text-white/50 text-[10px] leading-tight">Main Wallet</p>
+              <p className="text-white font-bold text-sm leading-tight">{mainBalance}</p>
+            </div>
           </div>
-          <div className="bg-white/5 rounded-lg px-2 py-1 text-center border border-white/10">
-            <p className="text-white/40 text-[9px]">Play wallet</p>
-            <p className="text-green-400 font-bold text-xs">{playBalance}</p>
+          <div className="bg-slate-800/60 backdrop-blur-sm rounded-xl px-3 py-2 flex items-center gap-2 border border-white/10">
+            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm1 6.5V7a1 1 0 10-2 0v2H7a1 1 0 000 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2z"/></svg>
+            </div>
+            <div>
+              <p className="text-white/50 text-[10px] leading-tight">Play Wallet</p>
+              <p className="text-green-400 font-bold text-sm leading-tight">{playBalance}</p>
+            </div>
           </div>
-          <div className="bg-white/5 rounded-lg px-2 py-1 text-center border border-white/10">
-            <p className="text-white/40 text-[9px]">Stake</p>
-            <p className="text-yellow-400 font-bold text-xs">{stake}</p>
+          <div className="bg-slate-800/60 backdrop-blur-sm rounded-xl px-3 py-2 flex items-center gap-2 border border-purple-500/30">
+            <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-xs font-black">$</span>
+            </div>
+            <div>
+              <p className="text-white/50 text-[10px] leading-tight">Stake</p>
+              <p className="text-purple-300 font-bold text-sm leading-tight">{stake}</p>
+            </div>
           </div>
         </div>
 
-        {/* Timer */}
-        <div className="flex items-center gap-1.5 bg-gray-800 rounded-lg px-2 py-1.5 border border-white/10">
-          <div className="text-center">
-            <p className="text-white/50 text-[9px]">Starts in</p>
-            <p className={`font-black text-xs ${timerClass}`}>{timer}s</p>
+        {/* Timer & Refresh */}
+        <div className="flex items-center gap-2">
+          <div className="bg-slate-800/60 backdrop-blur-sm rounded-xl px-4 py-2 border border-yellow-500/30">
+            <p className={`font-black text-2xl ${timerClass}`}>{timer}s</p>
           </div>
+          <button onClick={() => window.location.reload()}
+            className="flex items-center gap-2 text-white/90 hover:text-white bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 text-sm transition-all border border-white/20">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Refresh
+          </button>
         </div>
-      </div>
-
-      {/* ── Game info row ── */}
-      <div className="flex gap-2 px-3 py-2 flex-shrink-0">
-        {[
-          { label: 'Game ID', value: game?.game_id?.slice(-8).toUpperCase() ?? '—' },
-          { label: 'Players', value: game?.total_players ?? 0 },
-          { label: 'Derash',  value: derash },
-        ].map(({ label, value }) => (
-          <div key={label} className="info-tile">
-            <div className="info-tile-label">{label}</div>
-            <div className="info-tile-value">{value}</div>
-          </div>
-        ))}
       </div>
 
       {/* ── Hint ── */}
-      <div className="px-3 flex-shrink-0">
-        <p className="text-white/40 text-xs text-center py-1">
+      <div className="px-4 py-2 flex-shrink-0">
+        <p className="text-white/50 text-xs text-center">
           🟢 Yours &nbsp;|&nbsp; 🔴 Taken &nbsp;|&nbsp; Select a card (1–600)
-          {timer > 0 && timer <= 10 && (
-            <span className="text-red-400 font-bold animate-pulse"> — Hurry! {timer}s</span>
-          )}
         </p>
       </div>
 
       {/* ── Card grid ── */}
-      <div className="flex-1 overflow-y-auto px-3 pb-20">
-        <div className="card-grid-8">
-          {Array.from({ length: 600 }, (_, i) => i + 1).map(n => (
-            <button key={n} className={cardClass(n)}
-              disabled={!!(taken[n] && taken[n] !== user?.id) || timer === 0}
-              onClick={() => handleCardClick(n)}>
-              {n}
-            </button>
-          ))}
+      <div className="flex-1 overflow-y-auto px-4 pb-24">
+        {/* Card container with border */}
+        <div className="bg-slate-800/20 backdrop-blur-sm rounded-3xl p-5 border border-slate-700/40">
+          <div className="grid grid-cols-8 gap-2.5">
+            {Array.from({ length: 600 }, (_, i) => i + 1).map(n => {
+              const isTaken = taken[n] && taken[n] !== user?.id;
+              const isSelected = n === selected;
+              
+              return (
+                <button key={n}
+                  disabled={isTaken || timer === 0}
+                  onClick={() => handleCardClick(n)}
+                  style={{
+                    background: isSelected 
+                      ? '#22c55e' 
+                      : isTaken 
+                      ? '#ea580c' 
+                      : 'rgba(71, 85, 105, 0.5)',
+                    border: isSelected
+                      ? '2px solid #22c55e'
+                      : isTaken
+                      ? '2px solid #ea580c'
+                      : '1.5px solid rgba(100, 116, 139, 0.4)',
+                    color: '#fff',
+                    borderRadius: '12px',
+                    aspectRatio: '1',
+                    fontSize: '15px',
+                    fontWeight: '700',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: isTaken ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.15s',
+                    transform: isSelected ? 'scale(1.05)' : 'scale(1)',
+                    boxShadow: isSelected ? '0 0 20px rgba(34, 197, 94, 0.5)' : 'none',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isTaken && !isSelected) {
+                      e.currentTarget.style.background = 'rgba(100, 116, 139, 0.6)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isTaken && !isSelected) {
+                      e.currentTarget.style.background = 'rgba(71, 85, 105, 0.5)';
+                    }
+                  }}>
+                  {n}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* ── Selected card bottom bar ── */}
       {selected && timer > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-black/90 border-t border-green-500/40 px-4 py-3 flex items-center justify-between">
+        <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-white/10 px-4 py-4 flex items-center justify-between">
           <div>
             <p className="text-white/60 text-xs">Selected Card</p>
-            <p className="text-yellow-400 font-black text-xl">#{selected}</p>
+            <p className="text-green-400 font-black text-2xl">#{selected}</p>
           </div>
           <button onClick={() => autoJoin(game.game_id, user)}
-            className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-xl text-sm transition-all active:scale-95">
+            className="bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-3 rounded-xl text-base transition-all active:scale-95 shadow-lg">
             Join Now →
           </button>
         </div>
