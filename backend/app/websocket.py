@@ -213,3 +213,14 @@ async def broadcast_player_won(game_id: str, winners: List[dict]):
             "winners": winners
         }
     }, game_id)
+
+
+async def broadcast_game_state(game_id: str, total_players: int, prize_pool: float):
+    """Broadcast game state updates (players, prize pool)"""
+    await manager.broadcast_to_game({
+        "type": "game_state_update",
+        "data": {
+            "total_players": total_players,
+            "prize_pool": prize_pool
+        }
+    }, game_id)

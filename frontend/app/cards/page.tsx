@@ -24,103 +24,135 @@ function CardsInner() {
   const [loading, setLoading]   = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef<ReturnType<typeof resetWsClient> | null>(null);
+  const initRef = useRef(false); // Prevent double initialization
 
   /* ── Auto-join function (defined early so it can be used in useEffects) ── */
   const autoJoin = useCallback(async (gameId: string, u: any) => {
     console.log('Auto-joining game:', gameId);
+    // Use refs to get current values without causing re-renders
     let card = selected;
     if (!card) {
-      const avail = Array.from({ length: 600 }, (_, i) => i + 1).filter(n => !taken[n]);
+      const currentTaken = taken;
+      const avail = Array.from({ length: 600 }, (_, i) => i + 1).filter(n => !currentTaken[n]);
       if (!avail.length) { 
         console.log('No cards available');
-        alert('No cards available'); 
+        alert('No cards available - all 600 cartelas are taken!'); 
         router.push('/'); 
         return; 
       }
       card = avail[Math.floor(Math.random() * avail.length)];
-      console.log('Auto-selected random card:', card);
+      console.log('Auto-selected random cartela:', card);
     }
+    
+    // Show loading state
+    setLoading(true);
+    
     try {
       const tg = (window as any).Telegram?.WebApp;
       const initData = tg?.initData || '';
-      console.log('Joining game with card:', card);
+      console.log('Joining game with cartela:', card);
       await api.joinGame(gameId, card, initData || undefined);
       console.log('Successfully joined game');
-    } catch (e) {
+      
+      sessionStorage.setItem('myCard', String(card));
+      sessionStorage.setItem('myUserId', String(u?.id ?? 0));
+      console.log('Redirecting to game page...');
+      router.push(`/game?game=${gameId}&card=${card}`);
+    } catch (e: any) {
       console.error('Failed to join game:', e);
+      alert(`Failed to join game: ${e.message}`);
+      setLoading(false);
     }
-    sessionStorage.setItem('myCard', String(card));
-    sessionStorage.setItem('myUserId', String(u?.id ?? 0));
-    console.log('Redirecting to game page...');
-    router.push(`/game?game=${gameId}&card=${card}`);
   }, [selected, taken, router]);
 
   /* ── Init ───────────────────────────────────────────────────────── */
   useEffect(() => {
+    // Prevent double initialization in React StrictMode
+    if (initRef.current) return;
+    initRef.current = true;
+
     const init = async () => {
       try {
-        // Get or create user
-        const tg = (window as any).Telegram?.WebApp;
-        const initData = tg?.initData || '';
-        const u = await api.authenticateUser(initData || undefined);
-        setUser(u);
-        sessionStorage.setItem('user', JSON.stringify(u));
-
-        // For testing: Always create a fresh game
-        console.log('Creating new game with stake:', stake);
-        const g = await api.createGame('beginner', stake);
-        console.log('New game created:', g.game_id, 'countdown:', g.countdown_seconds);
+        setLoading(true);
         
-        setGame(g);
+        // Get or create user (from cache if available)
+        let u = null;
+        const cachedUser = sessionStorage.getItem('user');
+        if (cachedUser) {
+          u = JSON.parse(cachedUser);
+        } else {
+          const tg = (window as any).Telegram?.WebApp;
+          const initData = tg?.initData || '';
+          u = await api.authenticateUser(initData || undefined);
+          sessionStorage.setItem('user', JSON.stringify(u));
+        }
+        setUser(u);
+
+        // Always create a fresh game (don't reuse cached games)
+        console.log('Creating new game...');
+        const g = await api.createGame('beginner', stake);
         sessionStorage.setItem('currentGame', JSON.stringify(g));
         
-        // Set initial timer - use countdown_seconds from game or default to 60
-        const initialTimer = g.countdown_seconds || 60;
-        console.log('Setting initial timer to:', initialTimer);
+        setGame(g);
+        
+        // Set initial timer
+        const initialTimer = (g as any).countdown_seconds || 60;
         setTimer(initialTimer);
 
-        // Load card statuses
-        const cardsData = await api.getAvailableCards(g.game_id) as any;
-        setTaken(cardsData.taken_cards || {});
+        // Load card statuses and connect WebSocket in parallel
+        const [cardsData] = await Promise.all([
+          api.getAvailableCards((g as any).game_id),
+          // WebSocket connection starts in parallel (non-blocking)
+          (async () => {
+            // Only create WebSocket if not already connected
+            if (wsRef.current?.isConnected()) {
+              console.log('WebSocket already connected, reusing...');
+              return wsRef.current;
+            }
+            
+            const ws = resetWsClient();
+            wsRef.current = ws;
+            try {
+              console.log('Connecting WebSocket for game:', (g as any).game_id);
+              await ws.connect((g as any).game_id, u.id);
+              setWsConnected(true);
+              console.log('✅ WebSocket connected');
+            } catch (e) {
+              console.warn('⚠️ WebSocket failed - continuing without real-time updates');
+              // Don't block the UI if WebSocket fails
+            }
+            return ws;
+          })()
+        ]);
 
+        setTaken((cardsData as any).taken_cards || {});
         setLoading(false);
 
-        // Connect WebSocket for real-time card updates + timer
-        const ws = resetWsClient();
-        wsRef.current = ws;
-        try {
-          console.log('Connecting to WebSocket...');
-          await ws.connect(g.game_id, u.id);
-          console.log('WebSocket connected successfully');
-          setWsConnected(true);
-        } catch (e) {
-          console.error('WebSocket connection failed:', e);
+        // Setup WebSocket event handlers (only once)
+        const ws = wsRef.current;
+        if (ws) {
+          ws.on('card_selected', (d: any) => {
+            setTaken(prev => ({ ...prev, [d.card_number]: d.user_id }));
+          });
+          ws.on('card_available', (d: any) => {
+            setTaken(prev => { const n = { ...prev }; delete n[d.card_number]; return n; });
+          });
+          ws.on('timer_update', (d: any) => {
+            setTimer(d.seconds);
+          });
+          ws.on('game_started', () => {
+            // Capture current values at the time of event
+            const currentGame = g;
+            const currentUser = u;
+            autoJoin((currentGame as any).game_id, currentUser);
+          });
+          ws.on('initial_state', (d: any) => {
+            if (d.taken_cards) setTaken(d.taken_cards);
+            if (d.game_state?.timer !== undefined) {
+              setTimer(d.game_state.timer);
+            }
+          });
         }
-
-        ws.on('card_selected', (d: any) => {
-          console.log('Card selected:', d.card_number);
-          setTaken(prev => ({ ...prev, [d.card_number]: d.user_id }));
-        });
-        ws.on('card_available', (d: any) => {
-          console.log('Card available:', d.card_number);
-          setTaken(prev => { const n = { ...prev }; delete n[d.card_number]; return n; });
-        });
-        ws.on('timer_update', (d: any) => {
-          console.log('Timer update from WebSocket:', d.seconds);
-          setTimer(d.seconds);
-        });
-        ws.on('game_started', () => {
-          console.log('Game started event received');
-          autoJoin(g.game_id, u);
-        });
-        ws.on('initial_state', (d: any) => {
-          console.log('Initial state received:', d);
-          if (d.taken_cards) setTaken(d.taken_cards);
-          if (d.game_state?.timer !== undefined) {
-            console.log('Setting timer from initial state:', d.game_state.timer);
-            setTimer(d.game_state.timer);
-          }
-        });
 
       } catch (e: any) {
         alert('Failed to load: ' + e.message);
@@ -128,8 +160,12 @@ function CardsInner() {
       }
     };
     init();
-    return () => wsRef.current?.disconnect();
-  }, [stake]);
+    
+    return () => {
+      wsRef.current?.disconnect();
+      initRef.current = false;
+    };
+  }, [stake, router]); // Removed autoJoin from dependencies
 
   /* ── Local countdown (fallback if WS not connected) ─────────────── */
   useEffect(() => {
@@ -176,6 +212,10 @@ function CardsInner() {
   const mainBalance = (user?.balance ?? 0).toFixed(0);
   const playBalance = (user?.play_balance ?? 0).toFixed(0);
   const timerClass = timer <= 10 ? 'timer-urgent' : 'timer-normal';
+
+  // Prevent blinking by using stable references
+  const stableGame = game;
+  const stableUser = user;
 
   return (
     <div className="h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #6B21A8 0%, #1E293B 50%, #0F172A 100%)' }}>
@@ -241,7 +281,10 @@ function CardsInner() {
       {/* ── Hint ── */}
       <div className="px-4 py-2 flex-shrink-0">
         <p className="text-white/50 text-xs text-center">
-          🟢 Yours &nbsp;|&nbsp; 🔴 Taken &nbsp;|&nbsp; Select a card (1–600)
+          🟢 Your Selection &nbsp;|&nbsp; 🔴 Taken by Others &nbsp;|&nbsp; Select a Cartela (1–600)
+        </p>
+        <p className="text-yellow-400/70 text-xs text-center mt-1">
+          💡 Each cartela has a unique bingo card with 10 random numbers
         </p>
       </div>
 
@@ -307,7 +350,7 @@ function CardsInner() {
             <p className="text-white/60 text-xs">Selected Card</p>
             <p className="text-green-400 font-black text-2xl">#{selected}</p>
           </div>
-          <button onClick={() => autoJoin(game.game_id, user)}
+          <button onClick={() => autoJoin(stableGame.game_id, stableUser)}
             className="bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-3 rounded-xl text-base transition-all active:scale-95 shadow-lg">
             Join Now →
           </button>

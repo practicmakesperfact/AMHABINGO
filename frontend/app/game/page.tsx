@@ -36,7 +36,10 @@ function speak(text: string) {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 0.9;
+    u.rate = 0.85;
+    u.pitch = 1.0;
+    u.volume = 1.0;
+    u.lang = 'en-US';
     window.speechSynthesis.speak(u);
   }
 }
@@ -75,6 +78,7 @@ function GameInner() {
   const [currentNum,    setCurrentNum]    = useState<number | null>(null);
   const [recentNums,    setRecentNums]    = useState<number[]>([]);
   const [playerCard,    setPlayerCard]    = useState<number[][] | null>(null);
+  const [fullCard,      setFullCard]      = useState<number[][] | null>(null); // Store full 5x5 card
   const [muted,         setMuted]         = useState(false);
   const [automatic,     setAutomatic]     = useState(true);
   const [loading,       setLoading]       = useState(true);
@@ -82,6 +86,7 @@ function GameInner() {
   const [nextGameTimer, setNextGameTimer] = useState<number | null>(null);
   const [userId,        setUserId]        = useState(0);
   const [wsConnected,   setWsConnected]   = useState(false);
+  const initRef = useRef(false); // Prevent double initialization
 
   const mutableMuted = useRef(false);
   mutableMuted.current = muted;
@@ -89,32 +94,50 @@ function GameInner() {
   /* ── Init ── */
   useEffect(() => {
     if (!gameId) { router.push('/'); return; }
+    if (initRef.current) return; // Prevent double initialization
+    initRef.current = true;
 
     const init = async () => {
       try {
-        // Get user
+        setLoading(true);
+        
+        // Get user from cache first
+        let u = null;
         const storedUser = sessionStorage.getItem('user');
-        let u = storedUser ? JSON.parse(storedUser) : null;
-        if (!u) {
+        if (storedUser) {
+          u = JSON.parse(storedUser);
+        } else {
           const tg = (window as any).Telegram?.WebApp;
           u = await api.authenticateUser(tg?.initData || undefined);
           sessionStorage.setItem('user', JSON.stringify(u));
         }
         setUserId(u?.id ?? 0);
 
-        // Get game data
-        const g = await api.getGame(gameId);
-        setGame(g);
-        setCalledNums((g as any).called_numbers || []);
-        setCurrentNum((g as any).current_number ?? null);
+        // Fetch game data and player card in parallel
+        const [g, pcData] = await Promise.all([
+          api.getGame(gameId),
+          cardNum && u?.id ? api.getPlayerCard(gameId, u.id).catch(() => null) : Promise.resolve(null)
+        ]);
 
-        // Get player card
-        if (cardNum && u?.id) {
-          try {
-            const pc = await api.getPlayerCard(gameId, u.id) as any;
-            setPlayerCard(pc.card_data);
-            sessionStorage.setItem('myCard', String(pc.card_number));
-          } catch {}
+        setGame(g);
+        
+        // Set called numbers from game state
+        const initialCalled = (g as any).called_numbers || [];
+        setCalledNums(initialCalled);
+        
+        // Set current number
+        const initialCurrent = (g as any).current_number ?? null;
+        setCurrentNum(initialCurrent);
+        
+        // Set recent numbers (last 8 called)
+        setRecentNums(initialCalled.slice(-8).reverse());
+
+        if (pcData) {
+          // Store full 5x5 card
+          const fullCardData = (pcData as any).card_data;
+          setFullCard(fullCardData);
+          setPlayerCard(fullCardData); // Use full card
+          sessionStorage.setItem('myCard', String((pcData as any).card_number));
         }
 
         setLoading(false);
@@ -124,14 +147,33 @@ function GameInner() {
         try {
           await ws.connect(gameId, u?.id ?? 0);
           setWsConnected(true);
-        } catch {}
+        } catch (e) {
+          console.error('WebSocket failed:', e);
+        }
 
         ws.on('number_called', (d: any) => {
           const num = d.number;
+          const letter = getLetter(num);
+          
+          // Update current number
           setCurrentNum(num);
-          setCalledNums(prev => [...prev, num]);
-          setRecentNums(prev => [num, ...prev].slice(0, 5));
-          if (!mutableMuted.current) speak(`${getLetter(num)} ${num}`);
+          
+          // Add to called numbers (keep all called numbers)
+          setCalledNums(prev => {
+            if (prev.includes(num)) return prev;
+            return [...prev, num];
+          });
+          
+          // Update recent numbers - keep last 8 for display at top
+          setRecentNums(prev => {
+            const updated = [num, ...prev.filter(n => n !== num)].slice(0, 8);
+            return updated;
+          });
+          
+          // Announce with voice
+          if (!mutableMuted.current) {
+            speak(`${letter} ${num}`);
+          }
         });
 
         ws.on('player_won', (d: any) => {
@@ -158,22 +200,30 @@ function GameInner() {
         ws.on('game_started', () => {
           setGame((prev: any) => prev ? { ...prev, status: 'active' } : prev);
         });
+        
+        // Listen for game state updates (players, prize pool, etc.)
+        ws.on('game_state_update', (d: any) => {
+          setGame((prev: any) => ({
+            ...prev,
+            total_players: d.total_players ?? prev?.total_players,
+            prize_pool: d.prize_pool ?? prev?.prize_pool,
+          }));
+        });
+        
+        ws.on('initial_state', (d: any) => {
+          if (d.game_state) {
+            setGame((prev: any) => ({
+              ...prev,
+              total_players: d.game_state.total_players ?? prev?.total_players,
+              prize_pool: d.game_state.prize_pool ?? prev?.prize_pool,
+            }));
+          }
+        });
 
         ws.on('next_game', (d: any) => {
           // Auto-redirect to new game's card selection after 3s
-          setTimeout(() => router.push(`/cards?stake=${game?.entry_fee ?? 10}`), 3000);
+          setTimeout(() => router.push(`/cards?stake=${(g as any)?.entry_fee ?? 10}`), 3000);
         });
-
-        // Refresh game info every 5s
-        const interval = setInterval(async () => {
-          try {
-            const gUpdated = await api.getGame(gameId) as any;
-            setGame(gUpdated);
-            setCalledNums(gUpdated.called_numbers || []);
-            setCurrentNum(gUpdated.current_number ?? null);
-          } catch {}
-        }, 5000);
-        return () => clearInterval(interval);
 
       } catch (e: any) {
         console.error(e);
@@ -182,7 +232,10 @@ function GameInner() {
     };
 
     init();
-    return () => { getWsClient().disconnect(); };
+    return () => { 
+      getWsClient().disconnect(); 
+      initRef.current = false;
+    };
   }, [gameId]);
 
   /* ── Render ── */
@@ -232,8 +285,8 @@ function GameInner() {
         </div>
       </div>
 
-      {/* ── Info bar ── */}
-      <div className="flex gap-1.5 px-2 py-1.5 flex-shrink-0">
+      {/* ── Info bar - COMPACT ── */}
+      <div className="flex gap-1 px-2 py-1 flex-shrink-0">
         {[
           { label: 'Game ID', value: game?.game_id?.slice(-8).toUpperCase() ?? '—' },
           { label: 'Players', value: players },
@@ -242,122 +295,151 @@ function GameInner() {
           { label: 'Called',  value: calledNums.length },
         ].map(({ label, value }) => (
           <div key={label} className="info-tile text-center">
-            <div className="info-tile-label">{label}</div>
-            <div className="info-tile-value text-sm">{value}</div>
+            <div className="info-tile-label text-[9px]">{label}</div>
+            <div className="info-tile-value text-xs">{value}</div>
           </div>
         ))}
       </div>
 
-      {/* ── Main body ── */}
-      <div className="flex-1 flex gap-3 px-3 pb-2 overflow-hidden min-h-0">
+      {/* ── Main body - NO SCROLLING ── */}
+      <div className="flex-1 flex gap-2 px-2 pb-2 min-h-0">
 
-        {/* Left: 75-number BINGO grid - ALL 15 ROWS VISIBLE */}
-        <div className="flex flex-col bg-slate-800/40 rounded-2xl flex-shrink-0 border border-slate-700/50 p-2" style={{ width: '240px' }}>
+        {/* Left: 75-number BINGO grid */}
+        <div className="flex flex-col bg-slate-800/40 rounded-xl flex-shrink-0 border border-slate-700/50 p-2" style={{ width: '200px' }}>
           {/* B I N G O headers */}
-          <div className="grid grid-cols-5 gap-1.5 mb-2 flex-shrink-0">
+          <div className="grid grid-cols-5 gap-1 mb-1 flex-shrink-0">
             {BINGO.map(l => (
-              <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1.5 rounded-lg text-sm`}>{l}</div>
+              <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1 rounded text-xs`}>{l}</div>
             ))}
           </div>
-          {/* Numbers - ALL 15 ROWS, calculated height */}
-          <div className="grid grid-cols-5 gap-1.5 flex-1">
+          {/* Numbers - ALL 15 ROWS */}
+          <div className="grid grid-cols-5 gap-1 flex-1">
             {numColumns.map((col, ci) => (
-              <div key={ci} className="flex flex-col gap-1.5">
-                {col.map(n => (
-                  <div key={n}
-                    className={`flex items-center justify-center text-xs font-bold rounded-lg transition-all ${
-                      calledNums.includes(n)
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-slate-700/70 text-white/80'
-                    }`}
-                    style={{ height: 'calc((100% - 56px) / 15)' }}>
-                    {n}
-                  </div>
-                ))}
+              <div key={ci} className="flex flex-col gap-1">
+                {col.map(n => {
+                  const isCalled = calledNums.includes(n);
+                  const isCurrent = n === currentNum;
+                  return (
+                    <div key={n}
+                      className={`flex items-center justify-center text-[10px] font-bold rounded transition-all ${
+                        isCurrent
+                          ? 'bg-green-500 text-white scale-110'
+                          : isCalled
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-slate-700/70 text-white/80'
+                      }`}
+                      style={{ height: 'calc((100% - 14px) / 15)' }}>
+                      {n}
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </div>
         </div>
 
-        {/* Right panel */}
-        <div className="flex-1 flex flex-col gap-3 overflow-hidden min-w-0">
+        {/* Right panel - FIXED HEIGHT */}
+        <div className="flex-1 flex flex-col gap-2 min-w-0">
 
-          {/* Recent numbers row */}
-          <div className="flex items-center gap-2 bg-slate-800/40 rounded-2xl px-4 py-3 flex-shrink-0 border border-slate-700/50">
-            <div className="flex gap-2 overflow-x-auto flex-1">
-              {recentNums.length === 0 && (
-                <span className="text-white/30 text-xs">Waiting for numbers…</span>
-              )}
+          {/* Recent numbers + sound */}
+          <div className="flex items-center gap-2 bg-slate-800/40 rounded-xl px-3 py-1.5 flex-shrink-0 border border-slate-700/50">
+            <div className="flex gap-1 overflow-x-auto flex-1">
+              {recentNums.length === 0 && <span className="text-white/30 text-[10px]">Waiting...</span>}
               {recentNums.map((n, i) => {
                 const l = getLetter(n);
                 return (
-                  <div key={i} className={`num-badge ${LETTER_COLORS[l]} text-white font-black text-sm px-4 py-2 rounded-xl whitespace-nowrap`}>
+                  <div key={`${n}-${i}`} 
+                    className={`${HEADER_COLORS[l]} text-white font-bold text-[10px] px-2 py-1 rounded-full whitespace-nowrap min-w-[40px] text-center`}>
                     {l}-{n}
                   </div>
                 );
               })}
             </div>
+            <button onClick={() => setMuted(m => !m)} className="text-white/60 hover:text-white flex-shrink-0">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 3.5a1 1 0 00-1.707-.707L4.586 6.5H2a1 1 0 00-1 1v5a1 1 0 001 1h2.586l3.707 3.707A1 1 0 0010 16.5v-13z"/>
+              </svg>
+            </button>
           </div>
 
-          {/* Current number */}
-          <div className="flex-1 bg-slate-800/40 rounded-2xl p-4 flex flex-col items-center justify-center gap-4 overflow-hidden border border-slate-700/50">
+          {/* Current number - SMALL */}
+          <div className="bg-slate-800/40 rounded-xl p-2 flex items-center justify-center flex-shrink-0 border border-slate-700/50">
             {currentNum ? (
-              <div className="current-number-circle">
-                <span className="current-number-letter">{getLetter(currentNum)}</span>
-                <span className="current-number-num">{currentNum}</span>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className="w-3 h-3 bg-purple-400 rounded-full animate-bounce"
-                    style={{ animationDelay: `${i * 150}ms` }} />
-                ))}
-              </div>
-            )}
-
-            {/* Automatic toggle */}
-            <div className="w-full bg-slate-700/60 rounded-xl px-5 py-3 flex items-center justify-between">
-              <span className="text-white/70 text-base font-semibold">Automatic</span>
-              <button onClick={() => setAutomatic(a => !a)}
-                className={`relative w-14 h-7 rounded-full transition-colors ${automatic ? 'bg-green-500' : 'bg-gray-600'}`}>
-                <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${automatic ? 'translate-x-7' : ''}`} />
-              </button>
-            </div>
-
-            {/* Player card OR watching */}
-            {playerCard ? (
-              <div className="w-full">
-                <p className="text-white/50 text-xs text-center mb-2">Your Card — #{cardNum}</p>
-                {/* 5×5 bingo card */}
-                <div className="grid grid-cols-5 gap-2">
-                  {BINGO.map(l => (
-                    <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1.5 rounded text-sm`}>{l}</div>
-                  ))}
-                  {Array.from({ length: 5 }, (_, row) =>
-                    Array.from({ length: 5 }, (_, col) => {
-                      const val = playerCard[col]?.[row] ?? 0;
-                      const isFree = (row === 2 && col === 2) || val === 0;
-                      const isMarked = !isFree && calledNums.includes(val);
-                      return (
-                        <div key={`${row}-${col}`}
-                          className={`bingo-cell text-sm ${isFree ? 'free' : isMarked ? 'marked' : 'unmarked'}`}>
-                          {isFree ? '✦' : val}
-                        </div>
-                      );
-                    })
-                  )}
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center shadow-lg border-2 border-yellow-300">
+                <div className="text-purple-700 font-black text-xl leading-none">
+                  {getLetter(currentNum)}-{currentNum}
                 </div>
               </div>
             ) : (
-              <div className="w-full bg-slate-700/60 rounded-xl p-5 text-center">
-                <h3 className="text-white font-bold text-lg mb-2">Watching Only</h3>
+              <div className="flex gap-1">
+                {[0, 1, 2].map(i => (
+                  <div key={i} className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Automatic toggle - TINY */}
+          <div className="bg-slate-800/40 rounded-xl px-3 py-1.5 flex items-center justify-between flex-shrink-0 border border-slate-700/50">
+            <span className="text-white/70 text-xs font-semibold">Automatic</span>
+            <button onClick={() => setAutomatic(a => !a)}
+              className={`relative w-10 h-5 rounded-full transition-colors ${automatic ? 'bg-green-500' : 'bg-gray-600'}`}>
+              <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${automatic ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+
+          {/* Player's bingo card - FITS REMAINING SPACE */}
+          {playerCard && fullCard ? (
+            <div className="bg-slate-800/40 rounded-xl p-2 flex-1 flex flex-col border border-slate-700/50 min-h-0">
+              {/* BINGO headers */}
+              <div className="grid grid-cols-5 gap-1 mb-1 flex-shrink-0">
+                {BINGO.map(l => (
+                  <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1 rounded text-xs`}>{l}</div>
+                ))}
+              </div>
+              {/* 5x5 grid - PROPER GRID LAYOUT */}
+              <div className="grid grid-cols-5 grid-rows-5 gap-1 flex-1">
+                {Array.from({ length: 5 }, (_, row) =>
+                  Array.from({ length: 5 }, (_, col) => {
+                    const val = fullCard[col]?.[row] ?? 0;
+                    const isFree = row === 2 && col === 2;
+                    const isMarked = !isFree && calledNums.includes(val);
+                    
+                    return (
+                      <div key={`${row}-${col}`}
+                        className={`${
+                          isFree ? 'bg-purple-600' : isMarked ? 'bg-green-500' : 'bg-white'
+                        } ${
+                          isFree || isMarked ? 'text-white' : 'text-purple-700'
+                        } font-bold text-center flex items-center justify-center rounded text-xs transition-all`}>
+                        {isFree ? '✦' : val}
+                      </div>
+                    );
+                  })
+                ).flat()}
+              </div>
+              <div className="mt-1 text-center bg-yellow-600/90 rounded py-1 flex-shrink-0">
+                <span className="text-white font-bold text-[10px]">Cartela No: {cardNum}</span>
+              </div>
+            </div>
+          ) : playerCard ? (
+            <div className="bg-slate-800/40 rounded-xl p-4 text-center flex-1 flex items-center justify-center border border-slate-700/50">
+              <div>
+                <h3 className="text-white font-bold text-base mb-2">Loading Card...</h3>
+                <p className="text-white/50 text-sm">Cartela #{cardNum}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-800/40 rounded-xl p-4 text-center flex-1 flex items-center justify-center border border-slate-700/50">
+              <div>
+                <h3 className="text-white font-bold text-base mb-2">Watching Only</h3>
                 <p className="text-white/50 text-sm leading-relaxed">
                   የዚህ ዙር ጨዋታ ተጫዋች አይደሉም።<br />
                   አዲስ ዙር እስኪጀምር እዚሁ ይቆዩ።
                 </p>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -408,27 +490,34 @@ function GameInner() {
             {winner[0] && (
               <>
                 <div className="bg-gray-800/60 rounded-xl p-3 my-3">
-                  <p className="text-white/60 text-xs mb-2">🏆 Winning Cartela : {winner[0].card_number}</p>
+                  <p className="text-white/60 text-xs mb-2">🏆 Winning Cartela: {winner[0].card_number}</p>
                   {winner[0].card_data && (() => {
                     const winCells = getWinningCells(winner[0].card_data, winner[0].winning_pattern);
                     return (
                       <>
-                        <div className="grid grid-cols-5 gap-1 mb-1">
+                        <div className="grid grid-cols-5 gap-1.5 mb-1.5">
                           {BINGO.map(l => (
-                            <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1 rounded text-xs`}>{l}</div>
+                            <div key={l} className={`${HEADER_COLORS[l]} text-white font-black text-center py-1.5 rounded text-xs`}>{l}</div>
                           ))}
                         </div>
-                        <div className="grid grid-cols-5 gap-1">
+                        <div className="grid grid-cols-5 gap-1.5">
                           {Array.from({ length: 5 }, (_, row) =>
                             Array.from({ length: 5 }, (_, col) => {
                               const val = winner[0].card_data[col]?.[row] ?? 0;
                               const isFree = row === 2 && col === 2;
-                              const isWin  = winCells.has(`${row}-${col}`);
-                              const isMark = !isFree && calledNums.includes(val);
+                              const isWinningCell = winCells.has(`${row}-${col}`);
+                              const isCalled = !isFree && calledNums.includes(val);
+                              
                               return (
                                 <div key={`${row}-${col}`}
                                   className={`bingo-cell text-xs ${
-                                    isFree ? 'free' : isWin ? 'winning' : isMark ? 'marked' : 'unmarked'
+                                    isFree 
+                                      ? 'free' 
+                                      : isWinningCell 
+                                      ? 'winning' 
+                                      : isCalled 
+                                      ? 'marked' 
+                                      : 'unmarked'
                                   }`}>
                                   {isFree ? '✦' : val}
                                 </div>

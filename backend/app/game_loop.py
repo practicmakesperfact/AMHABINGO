@@ -94,10 +94,12 @@ class GameLoopManager:
             if not game:
                 return
 
-            # No players → cancel, create next
+            # Check if game has players
             if game.total_players == 0:
+                # No players, finish immediately and create next game
                 game.status = GameStatus.FINISHED
                 await db.commit()
+                print(f"⚠️ Game {game_id} has no players, finishing immediately")
                 await asyncio.sleep(3)
                 await self._create_next_game(game_id)
                 return
@@ -163,6 +165,11 @@ class GameLoopManager:
                 result = await db.execute(select(Game).where(Game.game_id == old_game_id))
                 old = result.scalar_one_or_none()
                 if not old:
+                    return
+
+                # Don't create next game if old game had no players
+                if old.total_players == 0:
+                    print(f"⚠️ Not creating next game after {old_game_id} (no players)")
                     return
 
                 gm = GameManager(db)

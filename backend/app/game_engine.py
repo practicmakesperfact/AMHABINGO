@@ -66,10 +66,16 @@ class BingoGameEngine:
     
     @staticmethod
     def mark_number(card: List[List[int]], marked: List[int], number: int) -> List[int]:
-        """Mark a number on the card if it exists"""
-        for row_idx, row in enumerate(card):
-            for col_idx, cell in enumerate(row):
-                if cell == number:
+        """Mark a number on the card if it exists
+        Card is stored as columns: card[col][row]
+        But we need to mark using row-major indices for check_win
+        """
+        # Card is stored as 5 columns, each with 5 numbers
+        # card[col][row] where col=0-4 (B,I,N,G,O) and row=0-4
+        for col_idx in range(5):
+            for row_idx in range(5):
+                if card[col_idx][row_idx] == number:
+                    # Convert to row-major flat index: row * 5 + col
                     flat_idx = row_idx * 5 + col_idx
                     if flat_idx not in marked:
                         marked.append(flat_idx)
@@ -157,8 +163,15 @@ class GameManager:
         if not game:
             raise ValueError("Game not found")
         
-        if game.status != GameStatus.WAITING:
-            raise ValueError("Game has already started")
+        # Allow joining during WAITING, COUNTDOWN, and early ACTIVE (before too many numbers called)
+        if game.status == GameStatus.FINISHED:
+            raise ValueError("Game has already finished")
+        
+        if game.status == GameStatus.ACTIVE:
+            # Allow joining only if less than 5 numbers have been called
+            called_count = len(game.called_numbers) if game.called_numbers else 0
+            if called_count >= 5:
+                raise ValueError("Game has already started - too late to join")
         
         # Generate bingo card
         card_data = BingoGameEngine.generate_bingo_card()
@@ -183,6 +196,10 @@ class GameManager:
         
         # Mark card as taken in Redis
         await redis_client.set_card_status(game_id, card_number, user_id)
+        
+        # Broadcast game state update to all connected clients
+        from .websocket import broadcast_game_state
+        await broadcast_game_state(game_id, game.total_players, game.prize_pool)
         
         return player
     

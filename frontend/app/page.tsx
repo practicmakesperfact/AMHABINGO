@@ -14,23 +14,33 @@ export default function Home() {
   useEffect(() => {
     const init = async () => {
       try {
-        // Try Telegram WebApp initData first
+        setLoading(true);
+        
+        // Check cache first
+        const cachedUser = sessionStorage.getItem('user');
+        if (cachedUser) {
+          const userData = JSON.parse(cachedUser);
+          setUser(userData);
+          setLoading(false);
+          
+          // Load stats in background (non-blocking)
+          api.getPlatformStats().then(setStats).catch(() => {});
+          return;
+        }
+
+        // No cache, authenticate
         const tg = (window as any).Telegram?.WebApp;
         const initData = tg?.initData || '';
         const userData = await api.authenticateUser(initData || undefined);
         setUser(userData);
-
-        // Store user in session
         sessionStorage.setItem('user', JSON.stringify(userData));
 
-        // Load stats
-        try {
-          const s = await api.getPlatformStats();
-          setStats(s);
-        } catch {}
+        // Load stats in parallel (non-blocking)
+        api.getPlatformStats().then(setStats).catch(() => {});
+        
+        setLoading(false);
       } catch (e: any) {
         setError(e.message || 'Cannot connect to backend');
-      } finally {
         setLoading(false);
       }
     };
@@ -38,10 +48,16 @@ export default function Home() {
   }, []);
 
   const handleStake = (stake: number) => {
+    // Clear old game data when starting new game
+    sessionStorage.removeItem('currentGame');
+    sessionStorage.removeItem('myCard');
+    sessionStorage.removeItem('myUserId');
+    // Immediate navigation without waiting
     router.push(`/cards?stake=${stake}`);
   };
 
-  if (loading) return (
+  // Show UI immediately if we have cached user data
+  if (loading && !user) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1a0533 0%, #0f0b1e 50%, #0d1b3e 100%)' }}>
       <div className="text-center">
         <div className="w-16 h-16 border-4 border-t-purple-500 border-white/10 rounded-full animate-spin mx-auto" />

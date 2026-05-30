@@ -91,7 +91,7 @@ body {
 }
 .bingo-cell.unmarked  { background: rgba(255,255,255,0.08); color: #ccc; }
 .bingo-cell.marked    { background: #ea580c; color: #fff; }
-.bingo-cell.winning   { background: #22c55e; color: #fff; box-shadow: 0 0 8px #22c55e; }
+.bingo-cell.winning   { background: #22c55e; color: #fff; box-shadow: 0 0 12px #22c55e; }
 .bingo-cell.free      { background: #7c3aed; color: #fff; }
 
 /* ── Info bar tiles ── */
