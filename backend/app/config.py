@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # App
     SECRET_KEY: str = "change-this-secret-key-in-production"
     COMMISSION_PERCENT: float = 20.0      # House takes 20% of total pot
-    GAME_INTERVAL_SECONDS: int = 4        # Seconds between number calls
+    GAME_INTERVAL_SECONDS: int = 3        # Seconds between number calls
     COUNTDOWN_SECONDS: int = 60           # Card selection countdown
 
     # CORS

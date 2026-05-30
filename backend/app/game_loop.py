@@ -75,7 +75,7 @@ class GameLoopManager:
         except Exception:
             pass
 
-        for remaining in range(seconds, 0, -1):
+        for remaining in range(seconds, -1, -1):
             try:
                 await redis_client.set_timer(game_id, remaining)
             except Exception:
@@ -85,6 +85,9 @@ class GameLoopManager:
 
     # ── Main game loop ────────────────────────────────────────────────────────
     async def _game_loop(self, game_id: str):
+        # Small delay after countdown to allow last-second joins
+        await asyncio.sleep(2)
+        
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Game).where(Game.game_id == game_id))
             game = result.scalar_one_or_none()

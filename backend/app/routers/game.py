@@ -175,8 +175,8 @@ async def join_game(
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
 
-    if game.status not in [GameStatus.WAITING, GameStatus.COUNTDOWN]:
-        raise HTTPException(status_code=400, detail="Game is not accepting players")
+    if game.status not in [GameStatus.WAITING, GameStatus.COUNTDOWN, GameStatus.ACTIVE]:
+        raise HTTPException(status_code=400, detail="Game has already finished")
 
     # Check balance
     total_balance = user.balance + user.play_balance
