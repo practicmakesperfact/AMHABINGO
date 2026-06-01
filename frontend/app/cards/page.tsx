@@ -32,7 +32,7 @@ function CardsInner() {
     
     // Check if game is still joinable
     try {
-      const currentGame = await api.getGame(gameId);
+      const currentGame: any = await api.getGame(gameId);
       if (currentGame.status === 'finished') {
         console.log('Game already finished, waiting for next game...');
         alert('Game has finished. Waiting for next game...');
@@ -258,7 +258,12 @@ function CardsInner() {
       {/* ── Top bar ── */}
       <div className="flex items-center justify-between gap-3 px-4 py-3 flex-shrink-0">
         {/* Back */}
-        <button onClick={() => router.push('/')}
+        <button onClick={() => {
+          // Clear session when user explicitly goes back
+          sessionStorage.removeItem('currentGame');
+          sessionStorage.removeItem('myCard');
+          router.push('/');
+        }}
           className="flex items-center gap-2 text-white/90 hover:text-white bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 text-sm transition-all border border-white/20">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
@@ -314,14 +319,7 @@ function CardsInner() {
       </div>
 
       {/* ── Hint ── */}
-      <div className="px-4 py-2 flex-shrink-0">
-        <p className="text-white/50 text-xs text-center">
-          🟢 Your Selection &nbsp;|&nbsp; 🔴 Taken by Others &nbsp;|&nbsp; Select a Cartela (1–600)
-        </p>
-        <p className="text-yellow-400/70 text-xs text-center mt-1">
-          💡 Each cartela has a unique 5×5 bingo card with 24 numbers + FREE space
-        </p>
-      </div>
+     
 
       {/* ── Card grid ── */}
       <div className="flex-1 overflow-y-auto px-4 pb-24">

@@ -25,6 +25,9 @@ export default function Home() {
           
           // Load stats in background (non-blocking)
           api.getPlatformStats().then(setStats).catch(() => {});
+          
+          // Check for active game and redirect if needed
+          await checkActiveGame(userData);
           return;
         }
 
@@ -38,6 +41,9 @@ export default function Home() {
         // Load stats in parallel (non-blocking)
         api.getPlatformStats().then(setStats).catch(() => {});
         
+        // Check for active game and redirect if needed
+        await checkActiveGame(userData);
+        
         setLoading(false);
       } catch (e: any) {
         setError(e.message || 'Cannot connect to backend');
@@ -46,6 +52,50 @@ export default function Home() {
     };
     init();
   }, []);
+
+  // Check if user has an active game and redirect accordingly
+  const checkActiveGame = async (userData: any) => {
+    try {
+      const currentGame = sessionStorage.getItem('currentGame');
+      const myCard = sessionStorage.getItem('myCard');
+      
+      if (!currentGame) return;
+      
+      const gameData = JSON.parse(currentGame);
+      const gameId = gameData.game_id;
+      
+      // Fetch latest game state
+      const game = await api.getGame(gameId);
+      
+      // If game is WAITING or COUNTDOWN, redirect to card selection
+      if (game.status === 'waiting' || game.status === 'countdown') {
+        router.push(`/cards?stake=${game.entry_fee}`);
+        return;
+      }
+      
+      // If game is ACTIVE, redirect to game page
+      if (game.status === 'active') {
+        if (myCard) {
+          // User joined - show their card
+          router.push(`/game?game=${gameId}&card=${myCard}`);
+        } else {
+          // User didn't join - show watching mode
+          router.push(`/game?game=${gameId}`);
+        }
+        return;
+      }
+      
+      // If game is FINISHED, clear session and stay on home
+      if (game.status === 'finished') {
+        sessionStorage.removeItem('currentGame');
+        sessionStorage.removeItem('myCard');
+      }
+    } catch (e) {
+      // Game not found or error - clear session
+      sessionStorage.removeItem('currentGame');
+      sessionStorage.removeItem('myCard');
+    }
+  };
 
   const handleStake = (stake: number) => {
     // Clear old game data when starting new game

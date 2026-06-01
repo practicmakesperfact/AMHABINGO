@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # App
     SECRET_KEY: str = "change-this-secret-key-in-production"
-    COMMISSION_PERCENT: float = 200.0      # House takes 20% of total pot
+    COMMISSION_PERCENT: float = 20.0      # House takes 20% of total pot
     GAME_INTERVAL_SECONDS: int = 5        # Seconds between number calls (real Bingo pace)
     COUNTDOWN_SECONDS: int = 60           # Card selection countdown (10s for testing, 60s for production)
 

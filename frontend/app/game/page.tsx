@@ -44,6 +44,26 @@ function speak(text: string) {
   }
 }
 
+function formatPattern(pattern: string): string {
+  if (!pattern) return 'Unknown';
+  
+  // Convert backend pattern names to user-friendly format
+  if (pattern.startsWith('row_')) {
+    const rowNum = parseInt(pattern.split('_')[1]) + 1;
+    return `Row ${rowNum}`;
+  }
+  if (pattern.startsWith('col_')) {
+    const colNum = parseInt(pattern.split('_')[1]) + 1;
+    return `Column ${colNum}`;
+  }
+  if (pattern === 'diagonal_lr') return 'Diagonal ↘';
+  if (pattern === 'diagonal_rl') return 'Diagonal ↙';
+  if (pattern === 'four_corner') return 'Four Corners';
+  if (pattern === 'blackout') return 'Blackout (Full Card)';
+  
+  return pattern;
+}
+
 function calcDerash(players: number, bet: number) {
   return Math.floor(players * bet * 0.8);
 }
@@ -86,16 +106,16 @@ function GameInner() {
   const [playerCard,    setPlayerCard]    = useState<number[][] | null>(null);
   const [fullCard,      setFullCard]      = useState<number[][] | null>(null); // Store full 5x5 card
   const [muted,         setMuted]         = useState(false);
-  const [automatic,     setAutomatic]     = useState(true);
   const [loading,       setLoading]       = useState(true);
+  const automatic = true; // Always ON, not changeable
+
+  const mutableMuted = useRef(false);
+  mutableMuted.current = muted;
   const [winner,        setWinner]        = useState<Winner[] | null>(null);
   const [nextGameTimer, setNextGameTimer] = useState<number | null>(null);
   const [userId,        setUserId]        = useState(0);
   const [wsConnected,   setWsConnected]   = useState(false);
   const initRef = useRef(false); // Prevent double initialization
-
-  const mutableMuted = useRef(false);
-  mutableMuted.current = muted;
 
   /* ── Init ── */
   useEffect(() => {
@@ -187,9 +207,6 @@ function GameInner() {
           console.log('🎉 BINGO! Winners:', winners);
           setWinner(winners);
           
-          // Disable automatic mode
-          setAutomatic(false);
-          
           // Announce winner
           if (winners.length && !mutableMuted.current) {
             speak('Bingo!');
@@ -203,7 +220,9 @@ function GameInner() {
             setNextGameTimer(count);
             if (count <= 0) {
               clearInterval(t);
-              router.push('/');
+              // Redirect to card selection with same stake (not home page)
+              const stake = (g as any)?.entry_fee ?? 10;
+              router.push(`/cards?stake=${stake}`);
             }
           }, 1000);
         });
@@ -292,7 +311,12 @@ function GameInner() {
                 </svg>
             }
           </button>
-          <button onClick={() => router.push('/')} className="text-white/60 hover:text-white">
+          <button onClick={() => {
+            // Clear session when user closes
+            sessionStorage.removeItem('currentGame');
+            sessionStorage.removeItem('myCard');
+            router.push('/');
+          }} className="text-white/60 hover:text-white">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/>
             </svg>
@@ -356,7 +380,7 @@ function GameInner() {
         {/* Right panel - FIXED HEIGHT */}
         <div className="flex-1 flex flex-col gap-2 min-w-0">
 
-          {/* Recent numbers + sound */}
+          {/* Recent numbers (no sound button) */}
           <div className="flex items-center gap-2 bg-slate-800/40 rounded-xl px-3 py-1.5 flex-shrink-0 border border-slate-700/50">
             <div className="flex gap-1 overflow-x-auto flex-1">
               {recentNums.length === 0 && <span className="text-white/30 text-[10px]">Waiting...</span>}
@@ -370,11 +394,6 @@ function GameInner() {
                 );
               })}
             </div>
-            <button onClick={() => setMuted(m => !m)} className="text-white/60 hover:text-white flex-shrink-0">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10 3.5a1 1 0 00-1.707-.707L4.586 6.5H2a1 1 0 00-1 1v5a1 1 0 001 1h2.586l3.707 3.707A1 1 0 0010 16.5v-13z"/>
-              </svg>
-            </button>
           </div>
 
           {/* Current number - SMALL (or GAME OVER banner) */}
@@ -403,16 +422,13 @@ function GameInner() {
             </div>
           )}
 
-          {/* Automatic toggle - TINY (disabled when winner) */}
-          <div className="bg-slate-800/40 rounded-xl px-3 py-1.5 flex items-center justify-between flex-shrink-0 border border-slate-700/50">
-            <span className={`text-xs font-semibold ${winner ? 'text-white/30' : 'text-white/70'}`}>Automatic</span>
+          {/* Automatic toggle - DISABLED (always ON) */}
+          <div className="bg-slate-800/40 rounded-xl px-3 py-1.5 flex items-center justify-between flex-shrink-0 border border-slate-700/50 opacity-60 blur-[0.3px]">
+            <span className="text-xs font-semibold text-white/50">Automatic</span>
             <button 
-              onClick={() => !winner && setAutomatic(a => !a)}
-              disabled={!!winner}
-              className={`relative w-10 h-5 rounded-full transition-colors ${
-                winner ? 'bg-gray-700 cursor-not-allowed' : automatic ? 'bg-green-500' : 'bg-gray-600'
-              }`}>
-              <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${automatic && !winner ? 'translate-x-5' : ''}`} />
+              disabled
+              className="relative w-10 h-5 rounded-full bg-green-500 cursor-not-allowed">
+              <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full translate-x-5" />
             </button>
           </div>
 
@@ -456,18 +472,15 @@ function GameInner() {
                 </span>
               </div>
             </div>
-          ) : playerCard ? (
-            <div className="bg-slate-800/40 rounded-xl p-4 text-center flex-1 flex items-center justify-center border border-slate-700/50">
-              <div>
-                <h3 className="text-white font-bold text-base mb-2">Loading Card...</h3>
-                <p className="text-white/50 text-sm">Cartela #{cardNum}</p>
-              </div>
-            </div>
           ) : (
             <div className="bg-slate-800/40 rounded-xl p-4 text-center flex-1 flex items-center justify-center border border-slate-700/50">
               <div>
-                <h3 className="text-white font-bold text-base mb-2">Watching Only</h3>
-                <p className="text-white/50 text-sm leading-relaxed">
+                <div className="text-4xl mb-3">👀</div>
+                <h3 className="text-white font-bold text-lg mb-2">Watching Only</h3>
+                <p className="text-white/70 text-sm leading-relaxed mb-1">
+                  You are not playing this round.
+                </p>
+                <p className="text-white/50 text-xs leading-relaxed">
                   የዚህ ዙር ጨዋታ ተጫዋች አይደሉም።<br />
                   አዲስ ዙር እስኪጀምር እዚሁ ይቆዩ።
                 </p>
@@ -479,7 +492,12 @@ function GameInner() {
 
       {/* ── Bottom buttons ── */}
       <div className="grid grid-cols-3 gap-2 px-2 pb-2 flex-shrink-0">
-        <button onClick={() => router.push('/')}
+        <button onClick={() => {
+          // Clear session when user explicitly leaves
+          sessionStorage.removeItem('currentGame');
+          sessionStorage.removeItem('myCard');
+          router.push('/');
+        }}
           className="bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl text-sm transition-all active:scale-95">
           Leave
         </button>
@@ -491,9 +509,9 @@ function GameInner() {
           </svg>
           Refresh
         </button>
-        <button className={`font-bold py-3 rounded-xl text-sm transition-all ${
-          automatic ? 'bg-yellow-600 hover:bg-yellow-500 text-white' : 'bg-gray-700 text-white/50'
-        }`} onClick={() => setAutomatic(a => !a)}>
+        <button 
+          disabled
+          className="font-bold py-3 rounded-xl text-sm bg-green-500 text-white cursor-not-allowed opacity-60 blur-[0.3px]">
           Automatic
         </button>
       </div>
@@ -503,7 +521,12 @@ function GameInner() {
 
       {/* ── Winner Overlay ── */}
       {winner && (
-        <div className="winner-overlay" onClick={() => { if (nextGameTimer === 0) router.push('/'); }}>
+        <div className="winner-overlay" onClick={() => { 
+          if (nextGameTimer === 0) {
+            const stake = game?.entry_fee ?? 10;
+            router.push(`/cards?stake=${stake}`);
+          }
+        }}>
           <div className="winner-card">
             {/* Crown */}
             <div className="w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg">
@@ -516,9 +539,14 @@ function GameInner() {
             <h2 className="text-yellow-400 font-black text-3xl mb-1">BINGO!</h2>
 
             {winner.map((w, i) => (
-              <p key={i} className="text-white font-bold text-lg mb-1">
-                🎉 {w.username || `Player ${w.user_id}`} WON! 🎉
-              </p>
+              <div key={i} className="mb-2">
+                <p className="text-white font-bold text-lg mb-1">
+                  🎉 {w.username || `Player ${w.user_id}`} WON! 🎉
+                </p>
+                <p className="text-yellow-300 font-semibold text-sm">
+                  Pattern: {formatPattern(w.winning_pattern)}
+                </p>
+              </div>
             ))}
 
             {winner[0] && (
@@ -583,9 +611,12 @@ function GameInner() {
               </div>
             )}
 
-            <button onClick={() => router.push('/')}
+            <button onClick={() => {
+              const stake = game?.entry_fee ?? 10;
+              router.push(`/cards?stake=${stake}`);
+            }}
               className="mt-4 w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-sm transition-all">
-              Back to Home
+              Next Game →
             </button>
           </div>
         </div>
