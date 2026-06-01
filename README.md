@@ -7,9 +7,10 @@ A complete, production-ready Telegram Mini App for playing Bingo with real-time 
 ### Core Features
 - ✅ **Telegram Mini App** - Seamless integration with Telegram
 - ✅ **Real-time Multiplayer** - WebSocket-based live updates
-- ✅ **Card Selection** - Choose from 600 unique cards
+- ✅ **600 Permanent Cartelas** - Each with unique 5×5 bingo card (24 numbers + FREE space)
+- ✅ **Standard 75-Ball Bingo** - Numbers 1-75, called randomly without repetition
 - ✅ **Auto-marking** - Numbers automatically marked on your card
-- ✅ **Win Detection** - Instant winner detection (rows, columns, diagonals)
+- ✅ **Multiple Win Patterns** - Rows, columns, diagonals, four-corner, blackout
 - ✅ **Multi-winner Support** - Prize split between multiple winners
 - ✅ **Payment Integration** - Chapa API for secure payments
 - ✅ **Audio Announcements** - Voice calls for each number
@@ -123,11 +124,28 @@ Frontend: `http://localhost:3000`
 
 1. **Start** - Open the bot in Telegram
 2. **Choose Stake** - Select your entry fee (10, 20 ETB, etc.)
-3. **Select Card** - Choose from 600 available cards
+3. **Select Cartela** - Choose from 600 permanent cartelas (each has a unique 5×5 grid with 24 numbers + FREE center space)
 4. **Wait** - 60-second countdown for other players
-5. **Play** - Numbers called every 4 seconds
-6. **Win** - Complete a row, column, or diagonal
+5. **Play** - Numbers 1-75 called randomly every 4 seconds (no repeats)
+6. **Win** - Complete a pattern: row, column, diagonal, four-corner, or blackout
 7. **Collect** - Prize automatically added to balance
+
+### Bingo Card Structure
+Each cartela has a standard 5×5 grid:
+- **B column** (1-15): 5 numbers
+- **I column** (16-30): 5 numbers  
+- **N column** (31-45): 4 numbers + FREE center space
+- **G column** (46-60): 5 numbers
+- **O column** (61-75): 5 numbers
+
+**Total:** 24 unique numbers + 1 FREE space = 25 cells
+
+### Winning Patterns
+- **Horizontal:** Any complete row (5 cells)
+- **Vertical:** Any complete column (5 cells)
+- **Diagonal:** Corner to corner (5 cells)
+- **Four Corner:** All 4 corner cells
+- **Blackout:** All 25 cells marked
 
 ## 🔧 Configuration
 

@@ -29,6 +29,26 @@ function CardsInner() {
   /* ── Auto-join function (defined early so it can be used in useEffects) ── */
   const autoJoin = useCallback(async (gameId: string, u: any) => {
     console.log('Auto-joining game:', gameId);
+    
+    // Check if game is still joinable
+    try {
+      const currentGame = await api.getGame(gameId);
+      if (currentGame.status === 'finished') {
+        console.log('Game already finished, waiting for next game...');
+        alert('Game has finished. Waiting for next game...');
+        setLoading(false);
+        return;
+      }
+      if (currentGame.status === 'active') {
+        console.log('Game already started, waiting for next game...');
+        alert('Game has started. Waiting for next game...');
+        setLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.error('Failed to check game status:', e);
+    }
+    
     // Use refs to get current values without causing re-renders
     let card = selected;
     if (!card) {
@@ -60,8 +80,18 @@ function CardsInner() {
       router.push(`/game?game=${gameId}&card=${card}`);
     } catch (e: any) {
       console.error('Failed to join game:', e);
-      alert(`Failed to join game: ${e.message}`);
-      setLoading(false);
+      const errorMsg = e.message || 'Unknown error';
+      
+      // Handle specific error cases
+      if (errorMsg.includes('already finished') || errorMsg.includes('already started')) {
+        console.log('Game not joinable, waiting for next game...');
+        alert('This game is no longer joinable. Waiting for next game...');
+        setLoading(false);
+        // Don't redirect, wait for next_game WebSocket event
+      } else {
+        alert(`Failed to join game: ${errorMsg}`);
+        setLoading(false);
+      }
     }
   }, [selected, taken, router]);
 
@@ -152,6 +182,11 @@ function CardsInner() {
               setTimer(d.game_state.timer);
             }
           });
+          ws.on('next_game', (d: any) => {
+            console.log('Next game created:', d.game_id);
+            // Reload page with new game
+            window.location.href = `/cards?stake=${stake}`;
+          });
         }
 
       } catch (e: any) {
@@ -175,7 +210,7 @@ function CardsInner() {
     return () => clearTimeout(t);
   }, [timer, loading, wsConnected]);
 
-  /* ── Auto-join when timer reaches 0 ─────────────────────────────── */
+  /* Auto-join when timer reaches 0  */
   useEffect(() => {
     if (timer === 0 && game && user && !loading) {
       console.log('Timer reached 0, auto-joining game...');
@@ -192,7 +227,7 @@ function CardsInner() {
     wsRef.current?.send('select_card', { card_number: n });
   };
 
-  /* ── Card color ──────────────────────────────────────────────────── */
+  /* Card color  */
   const cardClass = (n: number) => {
     if (n === selected) return 'card-btn selected';
     if (taken[n])       return 'card-btn taken';
@@ -284,7 +319,7 @@ function CardsInner() {
           🟢 Your Selection &nbsp;|&nbsp; 🔴 Taken by Others &nbsp;|&nbsp; Select a Cartela (1–600)
         </p>
         <p className="text-yellow-400/70 text-xs text-center mt-1">
-          💡 Each cartela has a unique bingo card with 10 random numbers
+          💡 Each cartela has a unique 5×5 bingo card with 24 numbers + FREE space
         </p>
       </div>
 

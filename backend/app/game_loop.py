@@ -113,29 +113,50 @@ class GameLoopManager:
             game_manager = GameManager(db)
 
             while True:
-                # Refresh
+                # Refresh game state
                 await db.refresh(game)
+                
+                # Check if game was stopped externally
                 if game.status != GameStatus.ACTIVE:
+                    print(f"Game {game_id} stopped externally")
                     break
 
                 # Call next number
                 number = await game_manager.call_number(game_id)
                 if number is None:
                     # All 75 called, no winner
+                    print(f"Game {game_id} finished - all numbers called, no winner")
                     await game_manager.finish_game(game_id, [])
                     await broadcast_player_won(game_id, [])
                     break
 
                 letter = BingoGameEngine.get_number_category(number)
+                print(f"Game {game_id}: Called {letter}-{number}")
+                
+                # IMMEDIATELY mark this number on ALL player cards (like real Bingo)
+                await game_manager.mark_number_on_all_cards(game_id, number)
+                
+                # Broadcast to frontend
                 await broadcast_number_called(game_id, number, letter)
 
-                await asyncio.sleep(1)   # brief pause before win check
+                # Brief pause before win check
+                await asyncio.sleep(0.5)
 
+                # CHECK FOR WINNERS IMMEDIATELY
                 winners = await game_manager.check_winners(game_id)
                 if winners:
+                    print(f"🎉 BINGO! Game {game_id} has {len(winners)} winner(s)")
+                    
+                    # IMMEDIATELY mark game as finished in THIS session
+                    await db.refresh(game)
+                    game.status = GameStatus.FINISHED
+                    game.finished_at = datetime.utcnow()
+                    await db.commit()
+                    
                     winner_ids = [w.user_id for w in winners]
                     prize = await game_manager.finish_game(game_id, winner_ids)
 
+                    # Prepare winner data for broadcast
                     winner_data = []
                     for w in winners:
                         u_res = await db.execute(select(User).where(User.id == w.user_id))
@@ -149,13 +170,18 @@ class GameLoopManager:
                             "prize_amount": prize or 0,
                         })
 
+                    # Broadcast winner to all clients
                     await broadcast_player_won(game_id, winner_data)
+                    print(f"✅ Game {game_id} finished - winner announced")
+                    
+                    # STOP THE LOOP IMMEDIATELY
                     break
 
+                # Wait before calling next number
                 await asyncio.sleep(settings.GAME_INTERVAL_SECONDS)
 
-        # Auto-create next game after short delay
-        await asyncio.sleep(6)
+        # Give players time to see winner announcement before auto-creating next game
+        await asyncio.sleep(10)
         await self._create_next_game(game_id)
 
     # ── Auto-create next game ─────────────────────────────────────────────────

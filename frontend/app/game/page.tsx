@@ -48,7 +48,7 @@ function calcDerash(players: number, bet: number) {
   return Math.floor(players * bet * 0.8);
 }
 
-/* ── winning rows/cols/diags ── */
+/* ── winning rows/cols/diags/patterns ── */
 function getWinningCells(card: number[][], pattern: string): Set<string> {
   const s = new Set<string>();
   if (!card || !pattern) return s;
@@ -62,6 +62,12 @@ function getWinningCells(card: number[][], pattern: string): Set<string> {
     for (let i = 0; i < 5; i++) s.add(`${i}-${i}`);
   } else if (pattern === 'diagonal_rl') {
     for (let i = 0; i < 5; i++) s.add(`${i}-${4 - i}`);
+  } else if (pattern === 'four_corner') {
+    s.add('0-0'); s.add('0-4'); s.add('4-0'); s.add('4-4');
+  } else if (pattern === 'blackout') {
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 5; c++) s.add(`${r}-${c}`);
+    }
   }
   return s;
 }
@@ -178,8 +184,17 @@ function GameInner() {
 
         ws.on('player_won', (d: any) => {
           const winners: Winner[] = d.winners || [];
+          console.log('🎉 BINGO! Winners:', winners);
           setWinner(winners);
-          if (winners.length && !mutableMuted.current) speak('Bingo!');
+          
+          // Disable automatic mode
+          setAutomatic(false);
+          
+          // Announce winner
+          if (winners.length && !mutableMuted.current) {
+            speak('Bingo!');
+          }
+          
           // Start next-game countdown
           let count = 8;
           setNextGameTimer(count);
@@ -362,35 +377,50 @@ function GameInner() {
             </button>
           </div>
 
-          {/* Current number - SMALL */}
-          <div className="bg-slate-800/40 rounded-xl p-2 flex items-center justify-center flex-shrink-0 border border-slate-700/50">
-            {currentNum ? (
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center shadow-lg border-2 border-yellow-300">
-                <div className="text-purple-700 font-black text-xl leading-none">
-                  {getLetter(currentNum)}-{currentNum}
+          {/* Current number - SMALL (or GAME OVER banner) */}
+          {winner ? (
+            <div className="bg-red-600 rounded-xl p-3 flex items-center justify-center flex-shrink-0 border-2 border-yellow-400">
+              <div className="text-center">
+                <div className="text-yellow-400 font-black text-xl">🏆 GAME OVER 🏆</div>
+                <div className="text-white font-bold text-sm mt-1">WINNER FOUND!</div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-800/40 rounded-xl p-2 flex items-center justify-center flex-shrink-0 border border-slate-700/50">
+              {currentNum ? (
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center shadow-lg border-2 border-yellow-300">
+                  <div className="text-purple-700 font-black text-xl leading-none">
+                    {getLetter(currentNum)}-{currentNum}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex gap-1">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
-                ))}
-              </div>
-            )}
-          </div>
+              ) : (
+                <div className="flex gap-1">
+                  {[0, 1, 2].map(i => (
+                    <div key={i} className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Automatic toggle - TINY */}
+          {/* Automatic toggle - TINY (disabled when winner) */}
           <div className="bg-slate-800/40 rounded-xl px-3 py-1.5 flex items-center justify-between flex-shrink-0 border border-slate-700/50">
-            <span className="text-white/70 text-xs font-semibold">Automatic</span>
-            <button onClick={() => setAutomatic(a => !a)}
-              className={`relative w-10 h-5 rounded-full transition-colors ${automatic ? 'bg-green-500' : 'bg-gray-600'}`}>
-              <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${automatic ? 'translate-x-5' : ''}`} />
+            <span className={`text-xs font-semibold ${winner ? 'text-white/30' : 'text-white/70'}`}>Automatic</span>
+            <button 
+              onClick={() => !winner && setAutomatic(a => !a)}
+              disabled={!!winner}
+              className={`relative w-10 h-5 rounded-full transition-colors ${
+                winner ? 'bg-gray-700 cursor-not-allowed' : automatic ? 'bg-green-500' : 'bg-gray-600'
+              }`}>
+              <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${automatic && !winner ? 'translate-x-5' : ''}`} />
             </button>
           </div>
 
-          {/* Player's bingo card - FITS REMAINING SPACE */}
+          {/* Player's bingo card - FITS REMAINING SPACE (gold border if winner) */}
           {playerCard && fullCard ? (
-            <div className="bg-slate-800/40 rounded-xl p-2 flex-1 flex flex-col border border-slate-700/50 min-h-0">
+            <div className={`bg-slate-800/40 rounded-xl p-2 flex-1 flex flex-col min-h-0 ${
+              isWinner ? 'border-4 border-yellow-400 shadow-2xl shadow-yellow-400/50' : 'border border-slate-700/50'
+            }`}>
               {/* BINGO headers */}
               <div className="grid grid-cols-5 gap-1 mb-1 flex-shrink-0">
                 {BINGO.map(l => (
@@ -418,8 +448,12 @@ function GameInner() {
                   })
                 ).flat()}
               </div>
-              <div className="mt-1 text-center bg-yellow-600/90 rounded py-1 flex-shrink-0">
-                <span className="text-white font-bold text-[10px]">Cartela No: {cardNum}</span>
+              <div className={`mt-1 text-center rounded py-1 flex-shrink-0 ${
+                isWinner ? 'bg-yellow-400' : 'bg-yellow-600/90'
+              }`}>
+                <span className={`font-bold text-[10px] ${isWinner ? 'text-purple-900' : 'text-white'}`}>
+                  {isWinner ? '🏆 WINNER! ' : ''}Cartela No: {cardNum}
+                </span>
               </div>
             </div>
           ) : playerCard ? (

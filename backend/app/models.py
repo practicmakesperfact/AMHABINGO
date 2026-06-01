@@ -43,6 +43,18 @@ class User(Base):
     players = relationship("Player", back_populates="user")
     transactions = relationship("Transaction", back_populates="user")
 
+class Cartela(Base):
+    """
+    Permanent cartela storage - 600 pre-generated bingo cards.
+    Each cartela has a unique 5x5 grid that never changes.
+    """
+    __tablename__ = "cartelas"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cartela_number = Column(Integer, unique=True, nullable=False, index=True)  # 1-600
+    card_data = Column(JSON, nullable=False)  # Permanent 5x5 grid
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 class Game(Base):
     __tablename__ = "games"
     
@@ -55,6 +67,7 @@ class Game(Base):
     total_players = Column(Integer, default=0)
     max_players = Column(Integer, default=100)
     called_numbers = Column(JSON, default=list)
+    remaining_numbers = Column(JSON, default=list)  # Shuffled deck for pop() method
     current_number = Column(Integer, nullable=True)
     winner_ids = Column(JSON, default=list)  # Support multiple winners
     countdown_seconds = Column(Integer, default=60)
@@ -71,11 +84,11 @@ class Player(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
-    card_number = Column(Integer, nullable=False)  # 1-600
-    card_data = Column(JSON, nullable=False)  # 5x5 bingo card
+    card_number = Column(Integer, nullable=False)  # 1-600 (references Cartela.cartela_number)
+    card_data = Column(JSON, nullable=False)  # Copy of cartela's 5x5 grid for this game
     marked_numbers = Column(JSON, default=list)
     has_won = Column(Boolean, default=False)
-    winning_pattern = Column(String, nullable=True)  # row, column, diagonal
+    winning_pattern = Column(String, nullable=True)  # row_0, col_1, diagonal_lr, four_corner, blackout
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -93,7 +106,7 @@ class Transaction(Base):
     status = Column(SQLEnum(TransactionStatus), default=TransactionStatus.PENDING)
     type = Column(SQLEnum(TransactionType), nullable=False)
     payment_method = Column(String, nullable=True)  # chapa, telebirr, etc
-    extra_data = Column(JSON, default=dict)  # Renamed from 'metadata' to avoid SQLAlchemy conflict
+    extra_data = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

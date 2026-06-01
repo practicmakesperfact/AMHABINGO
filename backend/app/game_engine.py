@@ -4,23 +4,59 @@ from typing import List, Tuple, Optional, Dict
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
-from .models import Game, Player, User, GameStatus
+from .models import Game, Player, User, GameStatus, Cartela
 from .redis_client import redis_client
 from .config import get_settings
 
 settings = get_settings()
 
 class BingoGameEngine:
-    """Core bingo game logic"""
+    """Core bingo game logic with support for all standard patterns"""
     
     @staticmethod
     def generate_bingo_card() -> List[List[int]]:
         """
-        Generate a 5x5 bingo card with numbers 1-75
-        B: 1-15, I: 16-30, N: 31-45, G: 46-60, O: 61-75
-        Center is FREE (0)
+        Generate a standard 75-ball bingo card with numbers 1-75
+        Returns: List of 5 columns, each containing 5 numbers
+        Card structure: card[col][row] where col=0-4 (B,I,N,G,O) and row=0-4
+        
+        Column ranges:
+        - B (col 0): 1-15
+        - I (col 1): 16-30
+        - N (col 2): 31-45 (center is FREE = 0)
+        - G (col 3): 46-60
+        - O (col 4): 61-75
         """
         card = []
+        ranges = [
+            (1, 15),    # B column
+            (16, 30),   # I column
+            (31, 45),   # N column
+            (46, 60),   # G column
+            (61, 75)    # O column
+        ]
+        
+        for col_idx, (start, end) in enumerate(ranges):
+            # Select 5 unique random numbers from this column's range
+            column = random.sample(range(start, end + 1), 5)
+            
+            # Set center cell (N column, middle row) as FREE
+            if col_idx == 2:  # N column
+                column[2] = 0  # Middle position (row 2) is FREE
+            
+            card.append(column)
+        
+        return card
+    
+    @staticmethod
+    def validate_bingo_card(card: List[List[int]]) -> bool:
+        """
+        Validate that a bingo card follows standard 75-ball rules
+        Returns True if valid, False otherwise
+        """
+        if len(card) != 5:
+            return False
+        
         ranges = [
             (1, 15),    # B
             (16, 30),   # I
@@ -29,17 +65,34 @@ class BingoGameEngine:
             (61, 75)    # O
         ]
         
-        for col_idx, (start, end) in enumerate(ranges):
-            column = random.sample(range(start, end + 1), 5)
-            card.append(column)
+        all_numbers = set()
         
-        # Transpose to get rows
-        card = [[card[col][row] for col in range(5)] for row in range(5)]
+        for col_idx, column in enumerate(card):
+            if len(column) != 5:
+                return False
+            
+            start, end = ranges[col_idx]
+            
+            for row_idx, num in enumerate(column):
+                # Check FREE space
+                if col_idx == 2 and row_idx == 2:
+                    if num != 0:
+                        return False
+                    continue
+                
+                # Check number is in valid range for this column
+                if not (start <= num <= end):
+                    print(f"❌ Invalid number {num} in column {col_idx} (expected {start}-{end})")
+                    return False
+                
+                # Check for duplicates
+                if num in all_numbers:
+                    print(f"❌ Duplicate number {num} found")
+                    return False
+                
+                all_numbers.add(num)
         
-        # Set center as FREE (0)
-        card[2][2] = 0
-        
-        return card
+        return True
     
     @staticmethod
     def get_number_category(number: int) -> str:
@@ -57,12 +110,22 @@ class BingoGameEngine:
         return ""
     
     @staticmethod
-    def call_next_number(called_numbers: List[int]) -> Optional[int]:
-        """Call a random number that hasn't been called yet"""
-        available = [n for n in range(1, 76) if n not in called_numbers]
-        if not available:
+    def call_next_number(remaining_numbers: List[int]) -> Optional[int]:
+        """
+        Call next number using pop() method (like real Bingo).
+        Numbers are pre-shuffled when game starts, then popped one by one.
+        This GUARANTEES no duplicates - each number called exactly once.
+        
+        Args:
+            remaining_numbers: Shuffled list of numbers not yet called
+            
+        Returns:
+            Next number to call, or None if all numbers called
+        """
+        if not remaining_numbers:
             return None
-        return random.choice(available)
+        # Pop the last number (most efficient, O(1) operation)
+        return remaining_numbers.pop()
     
     @staticmethod
     def mark_number(card: List[List[int]], marked: List[int], number: int) -> List[int]:
@@ -85,7 +148,10 @@ class BingoGameEngine:
     def check_win(card: List[List[int]], marked: List[int]) -> Tuple[bool, Optional[str]]:
         """
         Check if the card has a winning pattern
+        Supports: horizontal rows, vertical columns, diagonals, four-corner, blackout
         Returns: (has_won, pattern_type)
+        
+        Note: Blackout is checked first as it's the most valuable pattern
         """
         # Convert flat indices to 2D coordinates
         marked_coords = {(idx // 5, idx % 5) for idx in marked}
@@ -93,12 +159,21 @@ class BingoGameEngine:
         # Center is always marked (FREE)
         marked_coords.add((2, 2))
         
-        # Check rows
+        # Check blackout FIRST (all 25 cells marked) - most valuable pattern
+        if len(marked_coords) >= 25:
+            return True, "blackout"
+        
+        # Check four corners
+        corners = [(0, 0), (0, 4), (4, 0), (4, 4)]
+        if all(corner in marked_coords for corner in corners):
+            return True, "four_corner"
+        
+        # Check rows (horizontal)
         for row in range(5):
             if all((row, col) in marked_coords for col in range(5)):
                 return True, f"row_{row}"
         
-        # Check columns
+        # Check columns (vertical)
         for col in range(5):
             if all((row, col) in marked_coords for row in range(5)):
                 return True, f"col_{col}"
@@ -121,15 +196,20 @@ class GameManager:
         self.db = db
     
     async def create_game(self, room: str, entry_fee: float) -> Game:
-        """Create a new game"""
+        """Create a new game with pre-shuffled number deck"""
         import uuid
         game_id = f"GAME-{uuid.uuid4().hex[:8].upper()}"
+        
+        # Create shuffled deck of numbers 1-75 (like real Bingo)
+        remaining_numbers = list(range(1, 76))
+        random.shuffle(remaining_numbers)
         
         game = Game(
             game_id=game_id,
             room=room,
             entry_fee=entry_fee,
-            status=GameStatus.WAITING
+            status=GameStatus.WAITING,
+            remaining_numbers=remaining_numbers  # Pre-shuffled deck
         )
         
         self.db.add(game)
@@ -146,10 +226,19 @@ class GameManager:
         
         await redis_client.add_active_game(game_id)
         
+        print(f"✅ Created game {game_id} with shuffled deck: {remaining_numbers[:10]}... (showing first 10)")
+        
         return game
     
+    async def get_cartela(self, cartela_number: int) -> Optional[Cartela]:
+        """Get a permanent cartela by number"""
+        result = await self.db.execute(
+            select(Cartela).where(Cartela.cartela_number == cartela_number)
+        )
+        return result.scalar_one_or_none()
+    
     async def join_game(self, game_id: str, user_id: int, card_number: int) -> Player:
-        """Add player to game"""
+        """Add player to game using permanent cartela"""
         # Check if card is available
         taken_by = await redis_client.get_card_status(game_id, card_number)
         if taken_by:
@@ -163,18 +252,29 @@ class GameManager:
         if not game:
             raise ValueError("Game not found")
         
-        # Allow joining during WAITING, COUNTDOWN, and early ACTIVE (before too many numbers called)
+        # Only allow joining during WAITING and COUNTDOWN (standard Bingo rules)
         if game.status == GameStatus.FINISHED:
             raise ValueError("Game has already finished")
         
         if game.status == GameStatus.ACTIVE:
-            # Allow joining only if less than 5 numbers have been called
-            called_count = len(game.called_numbers) if game.called_numbers else 0
-            if called_count >= 5:
-                raise ValueError("Game has already started - too late to join")
+            raise ValueError("Game has already started - cannot join")
         
-        # Generate bingo card
-        card_data = BingoGameEngine.generate_bingo_card()
+        if game.status not in [GameStatus.WAITING, GameStatus.COUNTDOWN]:
+            raise ValueError("Cannot join game in current state")
+        
+        # Get permanent cartela from database
+        cartela = await self.get_cartela(card_number)
+        if not cartela:
+            raise ValueError(f"Cartela {card_number} not found. Please initialize cartelas first.")
+        
+        # Use the permanent card data
+        card_data = cartela.card_data
+        
+        # Validate card follows standard Bingo rules
+        if not BingoGameEngine.validate_bingo_card(card_data):
+            raise ValueError(f"Cartela {card_number} has invalid card data")
+        
+        print(f"✅ Using permanent cartela {card_number} for user {user_id}")
         
         # Create player
         player = Player(
@@ -238,7 +338,10 @@ class GameManager:
         })
     
     async def call_number(self, game_id: str) -> Optional[int]:
-        """Call next number in the game"""
+        """
+        Call next number using pop() method (like real Bingo).
+        Numbers are popped from pre-shuffled deck - GUARANTEES no duplicates.
+        """
         result = await self.db.execute(
             select(Game).where(Game.game_id == game_id)
         )
@@ -246,23 +349,81 @@ class GameManager:
         if not game or game.status != GameStatus.ACTIVE:
             return None
         
-        # Call next number
-        number = BingoGameEngine.call_next_number(game.called_numbers)
-        if number is None:
+        # Get remaining numbers (make a copy to work with)
+        remaining = game.remaining_numbers or []
+        if not remaining:
             return None
         
-        # Update database
-        game.called_numbers.append(number)
+        # Pop next number from shuffled deck
+        number = remaining.pop()
+        
+        # Update database - IMPORTANT: Reassign to trigger SQLAlchemy change detection
+        game.remaining_numbers = remaining
+        game.called_numbers = (game.called_numbers or []) + [number]
         game.current_number = number
+        
+        # Mark as modified for SQLAlchemy (for JSON columns)
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(game, "remaining_numbers")
+        flag_modified(game, "called_numbers")
+        
         await self.db.commit()
         
         # Update Redis
         await redis_client.add_called_number(game_id, number)
         
+        print(f"📞 Called number {number} | Remaining: {len(game.remaining_numbers)}/75")
+        
         return number
     
+    async def mark_number_on_all_cards(self, game_id: str, number: int):
+        """
+        Mark a called number on ALL player cards immediately (like real Bingo).
+        This ensures backend state matches frontend display.
+        """
+        result = await self.db.execute(
+            select(Game).where(Game.game_id == game_id)
+        )
+        game = result.scalar_one_or_none()
+        if not game:
+            return
+        
+        # Get all players in this game
+        players_result = await self.db.execute(
+            select(Player).where(Player.game_id == game.id)
+        )
+        players = players_result.scalars().all()
+        
+        # Mark the number on each player's card
+        from sqlalchemy.orm.attributes import flag_modified
+        
+        for player in players:
+            # Get current marked numbers
+            marked = player.marked_numbers or []
+            
+            # Mark the number
+            marked = BingoGameEngine.mark_number(
+                player.card_data,
+                marked,
+                number
+            )
+            
+            # Reassign to trigger SQLAlchemy change detection
+            player.marked_numbers = marked
+            
+            # Flag as modified for JSON column
+            flag_modified(player, "marked_numbers")
+        
+        # Commit all marks to database
+        await self.db.commit()
+        print(f"✅ Marked number {number} on {len(players)} player cards")
+    
     async def check_winners(self, game_id: str) -> List[Player]:
-        """Check if any players have won"""
+        """
+        Check if any players have won.
+        Numbers are already marked by mark_number_on_all_cards(),
+        so we just check for winning patterns.
+        """
         result = await self.db.execute(
             select(Game).where(Game.game_id == game_id)
         )
@@ -270,7 +431,7 @@ class GameManager:
         if not game:
             return []
         
-        # Get all players
+        # Get all players who haven't won yet
         players_result = await self.db.execute(
             select(Player).where(Player.game_id == game.id, Player.has_won.is_(False))
         )
@@ -278,15 +439,11 @@ class GameManager:
         
         winners = []
         for player in players:
-            # Auto-mark the current number
-            if game.current_number:
-                player.marked_numbers = BingoGameEngine.mark_number(
-                    player.card_data,
-                    player.marked_numbers,
-                    game.current_number
-                )
+            # DEBUG: Print marked numbers
+            print(f"🔍 Checking player {player.user_id}: {len(player.marked_numbers)} marked")
+            print(f"   Marked indices: {player.marked_numbers}")
             
-            # Check for win
+            # Check for win using already-marked numbers
             has_won, pattern = BingoGameEngine.check_win(
                 player.card_data,
                 player.marked_numbers
@@ -296,6 +453,9 @@ class GameManager:
                 player.has_won = True
                 player.winning_pattern = pattern
                 winners.append(player)
+                print(f"🎉 Player {player.user_id} won with pattern: {pattern}")
+            else:
+                print(f"   No win yet")
         
         if winners:
             await self.db.commit()
@@ -303,21 +463,34 @@ class GameManager:
         return winners
     
     async def finish_game(self, game_id: str, winner_ids: List[int]):
-        """Finish the game and distribute prizes"""
+        """Finish the game and distribute prizes (prevents duplicate payouts)"""
         result = await self.db.execute(
             select(Game).where(Game.game_id == game_id)
         )
         game = result.scalar_one_or_none()
         if not game:
-            return
+            return None
+        
+        # Prevent duplicate processing
+        if game.status == GameStatus.FINISHED:
+            print(f"⚠️ Game {game_id} already finished, skipping payout")
+            return None
         
         game.status = GameStatus.FINISHED
         game.finished_at = datetime.utcnow()
         game.winner_ids = winner_ids
         
+        if not winner_ids:
+            await self.db.commit()
+            return 0
+        
         # Calculate prize per winner
         commission = game.prize_pool * (settings.COMMISSION_PERCENT / 100)
-        prize_per_winner = (game.prize_pool - commission) / len(winner_ids)
+        total_prize = game.prize_pool - commission
+        prize_per_winner = total_prize / len(winner_ids)
+        
+        print(f"💰 Prize pool: {game.prize_pool} ETB, Commission: {commission} ETB")
+        print(f"💰 Prize per winner: {prize_per_winner} ETB ({len(winner_ids)} winner(s))")
         
         # Update winner balances
         for user_id in winner_ids:
@@ -329,6 +502,7 @@ class GameManager:
                     wins=User.wins + 1
                 )
             )
+            print(f"✅ Paid {prize_per_winner} ETB to user {user_id}")
         
         await self.db.commit()
         

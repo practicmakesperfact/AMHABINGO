@@ -175,8 +175,15 @@ async def join_game(
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
 
-    if game.status not in [GameStatus.WAITING, GameStatus.COUNTDOWN, GameStatus.ACTIVE]:
+    # Only allow joining during WAITING and COUNTDOWN (standard Bingo rules)
+    if game.status == GameStatus.FINISHED:
         raise HTTPException(status_code=400, detail="Game has already finished")
+    
+    if game.status == GameStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="Game has already started - cannot join")
+    
+    if game.status not in [GameStatus.WAITING, GameStatus.COUNTDOWN]:
+        raise HTTPException(status_code=400, detail="Cannot join game in current state")
 
     # Check balance
     total_balance = user.balance + user.play_balance
