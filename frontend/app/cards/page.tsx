@@ -170,6 +170,14 @@ function CardsInner() {
           ws.on('timer_update', (d: any) => {
             setTimer(d.seconds);
           });
+          ws.on('game_state_update', (d: any) => {
+            // Update game state when players join
+            setGame((prev: any) => ({
+              ...prev,
+              total_players: d.total_players ?? prev?.total_players,
+              prize_pool: d.prize_pool ?? prev?.prize_pool,
+            }));
+          });
           ws.on('game_started', () => {
             // Capture current values at the time of event
             const currentGame = g;
@@ -180,6 +188,13 @@ function CardsInner() {
             if (d.taken_cards) setTaken(d.taken_cards);
             if (d.game_state?.timer !== undefined) {
               setTimer(d.game_state.timer);
+            }
+            if (d.game_state) {
+              setGame((prev: any) => ({
+                ...prev,
+                total_players: d.game_state.total_players ?? prev?.total_players,
+                prize_pool: d.game_state.prize_pool ?? prev?.prize_pool,
+              }));
             }
           });
           ws.on('next_game', (d: any) => {
