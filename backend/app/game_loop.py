@@ -85,8 +85,8 @@ class GameLoopManager:
 
     # ── Main game loop ────────────────────────────────────────────────────────
     async def _game_loop(self, game_id: str):
-        # Small delay after countdown to allow last-second joins
-        await asyncio.sleep(2)
+        # Longer delay after countdown to allow last-second joins (increased from 2s to 5s)
+        await asyncio.sleep(5)
         
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Game).where(Game.game_id == game_id))
@@ -99,12 +99,13 @@ class GameLoopManager:
                 # No players, finish immediately and create next game
                 game.status = GameStatus.FINISHED
                 await db.commit()
-                print(f"⚠️ Game {game_id} has no players, finishing immediately")
+                print(f"⚠️ Game {game_id} (stake={game.entry_fee}) has no players, finishing and creating next game")
                 await asyncio.sleep(3)
                 await self._create_next_game(game_id)
                 return
 
             # Mark ACTIVE
+            print(f"🎮 Starting game {game_id} (stake={game.entry_fee}) with {game.total_players} players")
             game.status = GameStatus.ACTIVE
             game.started_at = datetime.utcnow()
             await db.commit()
@@ -193,11 +194,7 @@ class GameLoopManager:
                 if not old:
                     return
 
-                # Don't create next game if old game had no players
-                if old.total_players == 0:
-                    print(f"⚠️ Not creating next game after {old_game_id} (no players)")
-                    return
-
+                # Always create next game for this stake level to keep games available
                 gm = GameManager(db)
                 new_game = await gm.create_game(old.room, old.entry_fee)
                 print(f"✅ Next game created: {new_game.game_id} (stake={old.entry_fee})")

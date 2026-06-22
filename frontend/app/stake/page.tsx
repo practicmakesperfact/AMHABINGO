@@ -45,24 +45,8 @@ export default function StakePage() {
     setSelectedStake(amount);
     console.log('✅ Navigating to cards page...');
 
-    // Create demo game
-    const demoGame = {
-      id: 1,
-      game_id: `GAME-${Date.now()}`,
-      status: 'waiting' as const,
-      room: 'beginner',
-      entry_fee: amount,
-      prize_pool: amount,
-      total_players: 0,
-      max_players: 50,
-      called_numbers: [],
-      current_number: null,
-      winner_ids: [],
-      countdown_seconds: 60,
-    };
-
-    // Navigate to card selection
-    router.push(`/cards?game=${demoGame.game_id}`);
+    // Navigate to card selection with stake parameter
+    router.push(`/cards?stake=${amount}`);
   };
 
   return (

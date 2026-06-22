@@ -27,14 +27,34 @@ async def create_game(
     init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new game and immediately start 60s countdown."""
+    """Find or create a game for the specified stake amount."""
     if init_data:
         user_data = extract_user_from_init_data(init_data)
         if not user_data:
             raise HTTPException(status_code=401, detail="Invalid Telegram data")
 
+    # First, try to find an existing waiting/countdown game with this stake
+    result = await db.execute(
+        select(Game)
+        .where(
+            Game.entry_fee == game_data.entry_fee,
+            Game.room == game_data.room,
+            Game.status.in_([GameStatus.WAITING, GameStatus.COUNTDOWN])
+        )
+        .order_by(Game.created_at.desc())
+        .limit(1)
+    )
+    game = result.scalar_one_or_none()
+
+    # If found, return it
+    if game:
+        print(f"♻️ Reusing existing game {game.game_id} for stake {game_data.entry_fee}")
+        return game
+
+    # Otherwise, create a new game
     game_manager = GameManager(db)
     game = await game_manager.create_game(game_data.room, game_data.entry_fee)
+    print(f"✨ Created new game {game.game_id} for stake {game_data.entry_fee}")
 
     # Auto-start countdown loop
     loop_mgr = _get_game_loop_manager()
@@ -73,6 +93,28 @@ async def get_active_games(db: AsyncSession = Depends(get_db)):
         .limit(20)
     )
     return result.scalars().all()
+
+
+# ─── Get Game by Stake ────────────────────────────────────────────────────────
+@router.get("/by-stake/{entry_fee}", response_model=GameResponse)
+async def get_game_by_stake(entry_fee: float, db: AsyncSession = Depends(get_db)):
+    """Find an active game for a specific stake amount."""
+    result = await db.execute(
+        select(Game)
+        .where(
+            Game.entry_fee == entry_fee,
+            Game.status.in_([GameStatus.WAITING, GameStatus.COUNTDOWN])
+        )
+        .order_by(Game.created_at.desc())
+        .limit(1)
+    )
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No active game found for stake {entry_fee} ETB. Please try creating one."
+        )
+    return game
 
 
 # ─── Get Single Game ──────────────────────────────────────────────────────────

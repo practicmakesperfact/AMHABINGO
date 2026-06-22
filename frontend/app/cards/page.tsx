@@ -30,25 +30,6 @@ function CardsInner() {
   const autoJoin = useCallback(async (gameId: string, u: any) => {
     console.log('Auto-joining game:', gameId);
     
-    // Check if game is still joinable
-    try {
-      const currentGame: any = await api.getGame(gameId);
-      if (currentGame.status === 'finished') {
-        console.log('Game already finished, waiting for next game...');
-        alert('Game has finished. Waiting for next game...');
-        setLoading(false);
-        return;
-      }
-      if (currentGame.status === 'active') {
-        console.log('Game already started, waiting for next game...');
-        alert('Game has started. Waiting for next game...');
-        setLoading(false);
-        return;
-      }
-    } catch (e) {
-      console.error('Failed to check game status:', e);
-    }
-    
     // Use refs to get current values without causing re-renders
     let card = selected;
     if (!card) {
@@ -118,8 +99,8 @@ function CardsInner() {
         }
         setUser(u);
 
-        // Always create a fresh game (don't reuse cached games)
-        console.log('Creating new game...');
+        // Find or create a game for this stake amount (backend will reuse existing ones)
+        console.log('Finding/creating game for stake:', stake);
         const g = await api.createGame('beginner', stake);
         sessionStorage.setItem('currentGame', JSON.stringify(g));
         
@@ -199,8 +180,10 @@ function CardsInner() {
           });
           ws.on('next_game', (d: any) => {
             console.log('Next game created:', d.game_id);
-            // Reload page with new game
-            window.location.href = `/cards?stake=${stake}`;
+            // Only reload if it's for the same stake amount
+            if (d.entry_fee === stake) {
+              window.location.href = `/cards?stake=${stake}`;
+            }
           });
         }
 

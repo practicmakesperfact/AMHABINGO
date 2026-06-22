@@ -254,10 +254,7 @@ function GameInner() {
           }
         });
 
-        ws.on('next_game', (d: any) => {
-          // Auto-redirect to new game's card selection after 3s
-          setTimeout(() => router.push(`/cards?stake=${(g as any)?.entry_fee ?? 10}`), 3000);
-        });
+        // Removed: next_game redirect - handled by player_won event
 
       } catch (e: any) {
         console.error(e);
