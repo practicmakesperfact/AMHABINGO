@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getWsClient } from '@/lib/websocket';
 
-/* ── types ── */
+/* types */
 interface Winner {
   user_id: number;
   username?: string;
@@ -15,7 +15,7 @@ interface Winner {
   prize_amount: number;
 }
 
-/* ── helpers ── */
+/* helpers */
 const BINGO = ['B', 'I', 'N', 'G', 'O'];
 const LETTER_COLORS: Record<string, string> = {
   B: 'badge-b', I: 'badge-i', N: 'badge-n', G: 'badge-g', O: 'badge-o',
@@ -68,7 +68,7 @@ function calcDerash(players: number, bet: number) {
   return Math.floor(players * bet * 0.8);
 }
 
-/* ── winning rows/cols/diags/patterns ── */
+/* winning rows/cols/diags/patterns */
 function getWinningCells(card: number[][], pattern: string): Set<string> {
   const s = new Set<string>();
   if (!card || !pattern) return s;
@@ -92,7 +92,7 @@ function getWinningCells(card: number[][], pattern: string): Set<string> {
   return s;
 }
 
-/* ── Inner component ── */
+/* Inner component */
 function GameInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -117,7 +117,7 @@ function GameInner() {
   const [wsConnected,   setWsConnected]   = useState(false);
   const initRef = useRef(false); // Prevent double initialization
 
-  /* ── Init ── */
+  /* Init */
   useEffect(() => {
     if (!gameId) { router.push('/'); return; }
     if (initRef.current) return; // Prevent double initialization
@@ -269,7 +269,7 @@ function GameInner() {
     };
   }, [gameId]);
 
-  /* ── Render ── */
+  /* Render */
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: '#0f0b1e' }}>
       <div className="text-center">
@@ -293,7 +293,7 @@ function GameInner() {
   return (
     <div className="h-screen flex flex-col" style={{ background: '#0f0b1e' }}>
 
-      {/* ── Top header ── */}
+      {/* Top header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 flex-shrink-0">
         <h1 className="text-white font-black text-base tracking-widest">AMHABINGO</h1>
         <div className="flex gap-2">
@@ -321,7 +321,7 @@ function GameInner() {
         </div>
       </div>
 
-      {/* ── Info bar - COMPACT ── */}
+      {/* Info bar - COMPACT */}
       <div className="flex gap-1 px-2 py-1 flex-shrink-0">
         {[
           { label: 'Game ID', value: game?.game_id?.slice(-8).toUpperCase() ?? '—' },
@@ -337,7 +337,7 @@ function GameInner() {
         ))}
       </div>
 
-      {/* ── Main body - NO SCROLLING ── */}
+      {/* Main body - NO SCROLLING */}
       <div className="flex-1 flex gap-2 px-2 pb-2 min-h-0">
 
         {/* Left: 75-number BINGO grid */}
@@ -487,7 +487,7 @@ function GameInner() {
         </div>
       </div>
 
-      {/* ── Bottom buttons ── */}
+      {/* Bottom buttons */}
       <div className="grid grid-cols-3 gap-2 px-2 pb-2 flex-shrink-0">
         <button onClick={() => {
           // Clear session when user explicitly leaves
@@ -513,10 +513,10 @@ function GameInner() {
         </button>
       </div>
 
-      {/* ── Footer ── */}
+      {/* Footer */}
       <div className="text-center text-white/20 text-[10px] pb-1">@amhabingo_bot</div>
 
-      {/* ── Winner Overlay ── */}
+      {/* Winner Overlay */}
       {winner && (
         <div className="winner-overlay" onClick={() => { 
           if (nextGameTimer === 0) {

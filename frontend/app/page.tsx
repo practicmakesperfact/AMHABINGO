@@ -142,7 +142,7 @@ export default function Home() {
   return (
     <main className="min-h-screen pb-20" style={{ background: 'linear-gradient(135deg, #6B21A8 0%, #1E293B 50%, #0F172A 100%)' }}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex items-center justify-between px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center font-black text-xl text-purple-700">A</div>
@@ -157,14 +157,14 @@ export default function Home() {
         </button>
       </div>
 
-      {/* ── Welcome ── */}
+      {/* Welcome */}
       <div className="text-center pt-16 pb-12 px-4">
         <h1 className="text-4xl font-black text-white mb-2">
           Welcome to <span className="text-yellow-400">AMHABINGO</span>
         </h1>
       </div>
 
-      {/* ── Stake Selection Box ── */}
+      {/* Stake Selection Box */}
       <div className="px-6 mb-12">
         <div className="bg-gradient-to-br from-slate-800/60 to-slate-900/60 backdrop-blur-sm rounded-3xl p-6 border-2 border-yellow-600/40 shadow-2xl">
           <div className="flex items-center justify-center gap-2 mb-6">
@@ -206,7 +206,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── Stats ── */}
+      {/* Stats */}
       <div className="px-6 mb-8">
         <div className="bg-gradient-to-br from-slate-800/40 to-slate-900/40 backdrop-blur-sm rounded-3xl p-8 border border-white/10">
           <div className="grid grid-cols-3 gap-6 text-center">
@@ -224,7 +224,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── Bottom Nav ── */}
+      {/* Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-white/10 px-2 py-3 grid grid-cols-4 gap-1">
         {[
           { label: 'Game',    icon: 'M10 3.5L2 9.5v8h5v-5h6v5h5v-8l-8-6z',               path: '/' },

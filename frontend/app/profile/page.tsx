@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 
-/* ── shared nav ───────────────────────────────────────────────── */
+/* shared nav */
 function BottomNav({ active }: { active: string }) {
   const router = useRouter();
   const items = [
@@ -61,7 +61,7 @@ export default function ProfilePage() {
   return (
     <main className="min-h-screen pb-24" style={{ background: 'linear-gradient(160deg, #2d0b5a 0%, #0f0b1e 45%, #0d1b3e 100%)' }}>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
         <button onClick={() => router.back()}
           className="flex items-center gap-1.5 text-white/70 hover:text-white text-sm">
@@ -81,7 +81,7 @@ export default function ProfilePage() {
       ) : (
         <div className="px-4 pt-6 space-y-5">
 
-          {/* ── Avatar + name ── */}
+          {/* Avatar + name */}
           <div className="flex flex-col items-center gap-3 py-4">
             <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-full flex items-center justify-center text-3xl font-black text-white shadow-lg shadow-purple-900/50">
               {initials}
@@ -102,7 +102,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* ── Wallet cards ── */}
+          {/* Wallet cards */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/5 rounded-2xl p-4 border border-white/10 text-center">
               <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -127,7 +127,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* ── Stats ── */}
+          {/* Stats */}
           <div className="bg-white/5 rounded-2xl p-4 border border-white/10">
             <p className="text-white/50 text-xs uppercase tracking-widest mb-3">Statistics</p>
             <div className="grid grid-cols-3 gap-3 text-center">
@@ -144,7 +144,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* ── Menu items ── */}
+          {/* Menu items */}
           <div className="space-y-2">
             {[
               { label: 'Game History',  icon: '🕐', path: '/history', color: 'bg-blue-500/20' },

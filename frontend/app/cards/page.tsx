@@ -5,12 +5,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { resetWsClient } from '@/lib/websocket';
 
-/* ── helpers ─────────────────────────────────────────────────────────── */
+/* helpers */
 function calcDerash(players: number, bet: number) {
   return Math.floor(players * bet * 0.8); // 20% house commission
 }
 
-/* ── Inner component (needs Suspense for useSearchParams) ─────────────── */
+/* Inner component (needs Suspense for useSearchParams) */
 function CardsInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -26,7 +26,7 @@ function CardsInner() {
   const wsRef = useRef<ReturnType<typeof resetWsClient> | null>(null);
   const initRef = useRef(false); // Prevent double initialization
 
-  /* ── Auto-join function (defined early so it can be used in useEffects) ── */
+  /* Auto-join function (defined early so it can be used in useEffects) */
   const autoJoin = useCallback(async (gameId: string, u: any) => {
     console.log('Auto-joining game:', gameId);
     
@@ -76,7 +76,7 @@ function CardsInner() {
     }
   }, [selected, taken, router]);
 
-  /* ── Init ───────────────────────────────────────────────────────── */
+  /* Init */
   useEffect(() => {
     // Prevent double initialization in React StrictMode
     if (initRef.current) return;
@@ -200,7 +200,7 @@ function CardsInner() {
     };
   }, [stake, router]); // Removed autoJoin from dependencies
 
-  /* ── Local countdown (fallback if WS not connected) ─────────────── */
+  /* Local countdown (fallback if WS not connected) */
   useEffect(() => {
     // Only run local countdown if WebSocket is not connected
     if (loading || timer <= 0 || wsConnected) return;
@@ -253,7 +253,7 @@ function CardsInner() {
   return (
     <div className="h-screen flex flex-col" style={{ background: 'linear-gradient(135deg, #6B21A8 0%, #1E293B 50%, #0F172A 100%)' }}>
 
-      {/* ── Top bar ── */}
+      {/* Top bar */}
       <div className="flex items-center justify-between gap-3 px-4 py-3 flex-shrink-0">
         {/* Back */}
         <button onClick={() => {
@@ -316,10 +316,10 @@ function CardsInner() {
         </div>
       </div>
 
-      {/* ── Hint ── */}
+      {/* Hint */}
      
 
-      {/* ── Card grid ── */}
+      {/* Card grid */}
       <div className="flex-1 overflow-y-auto px-4 pb-24">
         {/* Card container with border */}
         <div className="bg-slate-800/20 backdrop-blur-sm rounded-3xl p-5 border border-slate-700/40">
@@ -374,7 +374,7 @@ function CardsInner() {
         </div>
       </div>
 
-      {/* ── Selected card bottom bar ── */}
+      {/* Selected card bottom bar */}
       {selected && timer > 0 && (
         <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-white/10 px-4 py-4 flex items-center justify-between">
           <div>
