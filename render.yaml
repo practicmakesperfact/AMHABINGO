@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: amhabingo-backend
+    env: python
+    region: oregon  # Choose: oregon, frankfurt, singapore
+    plan: free  # or starter ($7/mo for always-on)
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: DATABASE_URL
+        sync: false  # Set manually in dashboard
+      - key: REDIS_URL
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_SECRET
+        sync: false
+      - key: CHAPA_SECRET_KEY
+        sync: false
+      - key: CHAPA_WEBHOOK_SECRET
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true  # Auto-generates secure key
+      - key: FRONTEND_URL
+        value: https://amhabingo.vercel.app
+      - key: COMMISSION_PERCENT
+        value: "20.0"
+      - key: GAME_INTERVAL_SECONDS
+        value: "1"
+      - key: COUNTDOWN_SECONDS
+        value: "60"

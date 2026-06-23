@@ -15,14 +15,14 @@ This guide covers deploying AMHABINGO to production using modern cloud platforms
          ▼
 ┌─────────────────┐      ┌──────────────┐
 │  Frontend       │◄────►│  Backend     │
-│  (Vercel)       │      │  (Railway)   │
+│  (Vercel)       │      │  (Render)    │
 └─────────────────┘      └──────┬───────┘
                                 │
                     ┌───────────┴───────────┐
                     ▼                       ▼
             ┌───────────────┐      ┌──────────────┐
             │  PostgreSQL   │      │    Redis     │
-            │  (Supabase)   │      │  (Upstash)   │
+            │  (Neon)       │      │  (Upstash)   │
             └───────────────┘      └──────────────┘
 ```
 
@@ -31,47 +31,57 @@ This guide covers deploying AMHABINGO to production using modern cloud platforms
 ## Prerequisites
 
 - GitHub account
-- Vercel account
-- Railway account (or Render)
-- Supabase account
-- Upstash account
+- Vercel account (frontend)
+- Render account (backend)
+- Neon account (PostgreSQL database)
+- Upstash account (Redis)
 - Chapa account (payment)
 - Telegram Bot Token
 
 ---
 
-## Step 1: Database Setup (Supabase)
+## Step 1: Database Setup (Neon)
 
 ### 1.1 Create Project
-1. Go to https://supabase.com
-2. Click "New Project"
-3. Choose organization
-4. Set project name: `amhabingo`
-5. Set database password (save it!)
-6. Choose region (closest to users)
-7. Wait for provisioning (~2 minutes)
+1. Go to https://neon.tech
+2. Click "Sign Up" (use GitHub for easy access)
+3. Click "Create Project"
+4. Project name: `amhabingo`
+5. Database name: `bingo` (or keep default)
+6. Region: Choose closest to your users (AWS regions available)
+7. PostgreSQL version: 16 (latest)
+8. Click "Create Project"
 
 ### 1.2 Get Connection String
-1. Go to Project Settings → Database
-2. Copy "Connection string" (URI mode)
-3. Replace `[YOUR-PASSWORD]` with your password
-4. Should look like:
+1. On project dashboard, you'll see connection details
+2. Copy the connection string (looks like):
    ```
-   postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
+   postgresql://[user]:[password]@[endpoint].neon.tech/[dbname]?sslmode=require
+   ```
+3. **Important for asyncpg:** Use this format:
+   ```
+   postgresql+asyncpg://[user]:[password]@[endpoint].neon.tech/[dbname]?sslmode=require
    ```
 
-### 1.3 Run Migrations
+### 1.3 Configure Database
+Neon automatically includes:
+- ✅ Connection pooling (built-in)
+- ✅ SSL enabled by default
+- ✅ Auto-scaling storage
+- ✅ Automatic backups
+
+### 1.4 Run Migrations
 ```bash
 # Install psql if needed
-# On Windows: Download from PostgreSQL website
+# On Windows: Download from PostgreSQL website or use WSL
 # On Mac: brew install postgresql
 # On Linux: sudo apt install postgresql-client
 
-# Connect to database
-psql "postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres"
+# Connect to database (use connection string from Neon dashboard)
+psql "postgresql://[user]:[password]@[endpoint].neon.tech/[dbname]?sslmode=require"
 
-# Run schema (copy from backend/app/models.py)
-# Or use Alembic migrations
+# Or run migrations from your app
+# Neon works great with Alembic
 ```
 
 ---
@@ -79,24 +89,29 @@ psql "postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgre
 ## Step 2: Redis Setup (Upstash)
 
 ### 2.1 Create Database
-1. Go to https://upstash.com
+1. Go to https://console.upstash.com
 2. Click "Create Database"
 3. Name: `amhabingo-redis`
-4. Type: Regional
-5. Region: Choose closest to backend
-6. Click "Create"
+4. Type: **Regional** (for better latency)
+5. Region: Choose closest to your Render backend
+6. Primary Region: AWS (matches Neon)
+7. TLS: Enabled (default)
+8. Click "Create"
 
 ### 2.2 Get Connection URL
 1. Go to database details
-2. Copy "UPSTASH_REDIS_REST_URL"
-3. Should look like:
+2. Copy the connection string in format:
    ```
    redis://default:[PASSWORD]@[REGION].upstash.io:6379
+   ```
+3. Or use REST API URL for serverless:
+   ```
+   https://[REGION].upstash.io
    ```
 
 ---
 
-## Step 3: Backend Deployment (Railway)
+## Step 3: Backend Deployment (Render)
 
 ### 3.1 Prepare Repository
 ```bash
@@ -106,21 +121,67 @@ git commit -m "Prepare for deployment"
 git push origin main
 ```
 
-### 3.2 Deploy to Railway
-1. Go to https://railway.app
-2. Click "New Project"
-3. Choose "Deploy from GitHub repo"
-4. Select your repository
-5. Railway auto-detects Python/FastAPI
+### 3.2 Create render.yaml (Optional but Recommended)
+Create `render.yaml` in root directory:
 
-### 3.3 Configure Environment Variables
-In Railway dashboard, add:
+```yaml
+services:
+  - type: web
+    name: amhabingo-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_SECRET
+        sync: false
+      - key: CHAPA_SECRET_KEY
+        sync: false
+      - key: CHAPA_WEBHOOK_SECRET
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://amhabingo.vercel.app
+      - key: COMMISSION_PERCENT
+        value: 20.0
+      - key: GAME_INTERVAL_SECONDS
+        value: 1
+      - key: COUNTDOWN_SECONDS
+        value: 60
+```
+
+### 3.3 Deploy to Render
+1. Go to https://dashboard.render.com
+2. Click "New +" → "Web Service"
+3. Connect your GitHub repository
+4. Configure:
+   - **Name:** `amhabingo-backend`
+   - **Region:** Oregon (or closest to you)
+   - **Branch:** `main`
+   - **Root Directory:** `backend`
+   - **Runtime:** Python 3
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+5. **Plan:** Free (or Starter for better performance)
+
+### 3.4 Configure Environment Variables
+In Render dashboard, add these environment variables:
 
 ```env
-# Database
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
+# Database (from Neon)
+DATABASE_URL=postgresql+asyncpg://[user]:[password]@[endpoint].neon.tech/[dbname]?sslmode=require
 
-# Redis
+# Redis (from Upstash)
 REDIS_URL=redis://default:[PASSWORD]@[REGION].upstash.io:6379
 
 # Chapa Payment
@@ -128,27 +189,25 @@ CHAPA_SECRET_KEY=your_chapa_secret_key
 CHAPA_WEBHOOK_SECRET=your_webhook_secret
 
 # Telegram
-TELEGRAM_BOT_TOKEN=your_bot_token
+BOT_TOKEN=your_bot_token
+TELEGRAM_BOT_SECRET=your_telegram_secret
 
 # App Settings
-SECRET_KEY=your_random_secret_key_here
-COMMISSION_PERCENT=10
-MAX_PLAYERS=50
+SECRET_KEY=your_random_secret_key_here_min_32_chars
+COMMISSION_PERCENT=20.0
+GAME_INTERVAL_SECONDS=1
 COUNTDOWN_SECONDS=60
 
 # CORS
-FRONTEND_URL=https://your-app.vercel.app
+FRONTEND_URL=https://amhabingo.vercel.app
 ```
 
-### 3.4 Set Root Directory
-1. Go to Settings → Deploy
-2. Set "Root Directory": `backend`
-3. Set "Start Command": `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-
 ### 3.5 Deploy
-1. Click "Deploy"
-2. Wait for build (~2-3 minutes)
-3. Get deployment URL: `https://amhabingo-production.up.railway.app`
+1. Click "Create Web Service"
+2. Wait for build (~3-5 minutes)
+3. Get deployment URL: `https://amhabingo-backend.onrender.com`
+
+**Note:** Free tier sleeps after 15 minutes of inactivity. First request takes ~30s to wake up.
 
 ---
 
@@ -182,11 +241,15 @@ Or use Vercel Dashboard:
 2. Click "New Project"
 3. Import from GitHub
 4. Select repository
-5. Set "Root Directory": `frontend`
+5. Configure:
+   - **Framework Preset:** Next.js
+   - **Root Directory:** `frontend`
+   - **Build Command:** `npm run build` (auto-detected)
+   - **Output Directory:** `.next` (auto-detected)
 6. Add environment variables:
    ```
-   NEXT_PUBLIC_API_URL=https://amhabingo-production.up.railway.app
-   NEXT_PUBLIC_WS_URL=wss://amhabingo-production.up.railway.app
+   NEXT_PUBLIC_API_URL=https://amhabingo-backend.onrender.com
+   NEXT_PUBLIC_WS_URL=wss://amhabingo-backend.onrender.com
    ```
 7. Click "Deploy"
 
@@ -276,14 +339,14 @@ help - Get help
 2. Add custom domain
 3. Follow DNS instructions
 
-**For Backend (Railway):**
-1. Go to Railway → Project → Settings → Domains
-2. Add custom domain
+**For Backend (Render):**
+1. Go to Render → Service → Settings → Custom Domains
+2. Add custom domain (e.g., `api.amhabingo.com`)
 3. Update DNS:
    ```
    Type: CNAME
    Name: api
-   Value: [railway-domain]
+   Value: [your-service].onrender.com
    ```
 
 ### 7.3 Update URLs
@@ -299,24 +362,25 @@ Update all environment variables with new domains:
 - Automatic SSL (Let's Encrypt)
 - No configuration needed
 
-### 8.2 Railway
-- Automatic SSL
+### 8.2 Render
+- Automatic SSL (Let's Encrypt)
 - No configuration needed
 
 ---
 
 ## Step 9: Monitoring & Logging
 
-### 9.1 Railway Logs
+### 9.1 Render Logs
+1. Go to Render Dashboard
+2. Select your service
+3. Click "Logs" tab (real-time logs)
+4. Or use CLI:
 ```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login
-railway login
+# Install Render CLI (optional)
+# brew install render (Mac) or download from render.com/docs/cli
 
 # View logs
-railway logs
+render logs
 ```
 
 ### 9.2 Vercel Logs
@@ -358,9 +422,10 @@ curl https://api.amhabingo.com/health
 ## Scaling Considerations
 
 ### Database
-- Supabase auto-scales
-- Monitor connection pool
-- Add read replicas if needed
+- Neon auto-scales storage (free tier: 0.5GB, scales to 3GB)
+- Built-in connection pooling
+- Free tier has 100 hours compute/month
+- Upgrade to Pro for unlimited compute ($19/month)
 
 ### Redis
 - Upstash auto-scales
@@ -368,9 +433,10 @@ curl https://api.amhabingo.com/health
 - Upgrade plan if needed
 
 ### Backend
-- Railway auto-scales
-- Monitor CPU/memory
-- Add more instances if needed
+- Render Free tier: 512MB RAM, 0.1 CPU (sleeps after 15 min inactivity)
+- Upgrade to Starter ($7/month) or higher for always-on
+- Auto-scales on paid tiers
+- Monitor from dashboard
 
 ### Frontend
 - Vercel auto-scales
@@ -383,9 +449,10 @@ curl https://api.amhabingo.com/health
 
 ### Database Backups
 ```bash
-# Supabase has automatic backups
+# Neon provides automatic backups (point-in-time recovery on paid plans)
+# Free tier: Daily backups kept for 7 days
 # Manual backup:
-pg_dump "postgresql://..." > backup.sql
+pg_dump "postgresql://[user]:[password]@[endpoint].neon.tech/[dbname]?sslmode=require" > backup.sql
 ```
 
 ### Redis Backups
@@ -411,26 +478,31 @@ pg_dump "postgresql://..." > backup.sql
 
 ## Cost Estimation
 
-### Free Tier (Development)
-- Vercel: Free
-- Railway: $5/month (500 hours)
-- Supabase: Free (500MB)
-- Upstash: Free (10K commands/day)
-- **Total: ~$5/month**
+### Free Tier (Development & Early Production)
+- **Vercel:** Free (100GB bandwidth, unlimited deployments)
+- **Render:** Free (750 hours/month, sleeps after inactivity)
+- **Neon:** Free (0.5GB storage, 100 compute hours/month)
+- **Upstash:** Free (10K commands/day)
+- **Total: $0/month** ✅
 
-### Production (1000 users)
-- Vercel: Free - $20/month
-- Railway: $20/month
-- Supabase: $25/month
-- Upstash: $10/month
-- **Total: ~$55-75/month**
+**Limitations:**
+- Backend sleeps after 15 min (30s wake time)
+- Database has 100 compute hours/month limit
+- Redis 10K daily commands
 
-### Scale (10,000 users)
-- Vercel: $20/month
-- Railway: $50/month
-- Supabase: $100/month
-- Upstash: $30/month
-- **Total: ~$200/month**
+### Production (1000 active users)
+- **Vercel:** Free - $20/month (Pro if you need more bandwidth)
+- **Render:** $7/month (Starter - always on, 512MB RAM)
+- **Neon:** $19/month (Pro - unlimited compute, 10GB storage)
+- **Upstash:** Free or $10/month (if exceeding limits)
+- **Total: ~$26-56/month**
+
+### Scale (10,000+ users)
+- **Vercel:** $20/month (Pro)
+- **Render:** $25-85/month (Standard or Pro instance)
+- **Neon:** $69/month (Scale - high performance, 50GB)
+- **Upstash:** $30/month
+- **Total: ~$144-204/month**
 
 ---
 
@@ -457,8 +529,9 @@ pg_dump "postgresql://..." > backup.sql
 
 ### Backend Rollback
 ```bash
-# Railway
-railway rollback
+# Render
+# Go to Dashboard → Deploy → Select previous successful deploy → "Rollback to this version"
+# Or redeploy from specific commit
 ```
 
 ### Frontend Rollback
@@ -481,8 +554,9 @@ psql "postgresql://..." < backup.sql
 
 **Issue: WebSocket not connecting**
 - Check WSS (not WS) in production
-- Verify CORS settings
-- Check Railway logs
+- Verify CORS settings in backend
+- Check Render logs for connection errors
+- Render supports WebSockets on all plans
 
 **Issue: Payment failing**
 - Verify Chapa API key
@@ -490,9 +564,10 @@ psql "postgresql://..." < backup.sql
 - Test in sandbox mode first
 
 **Issue: Database connection errors**
-- Check connection string
-- Verify IP whitelist (Supabase)
-- Check connection pool size
+- Check connection string format (must include `?sslmode=require`)
+- Neon requires SSL connections
+- Use `postgresql+asyncpg://` for async connections
+- Check compute hours limit on free tier
 
 ---
 
