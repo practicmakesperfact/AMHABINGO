@@ -15,19 +15,19 @@ body {
   overflow-x: hidden;
 }
 
-/* ── Scrollbar ── */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
 
-/* ── Card grid (8 cols, compact) ── */
+/* Card grid (8 cols, compact) */
 .card-grid-8 {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   gap: 12px;
 }
 
-/* ── Card buttons ── */
+/* Card buttons */
 .card-btn {
   aspect-ratio: 1;
   border-radius: 16px;
@@ -65,14 +65,14 @@ body {
   border-color: #ea580c;
 }
 
-/* ── BINGO number grid ── */
+/* BINGO number grid */
 .bingo-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 6px;
 }
 
-/* ── BINGO 5x5 card ── */
+/* BINGO 5x5 card */
 .bingo-card {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -94,7 +94,7 @@ body {
 .bingo-cell.winning   { background: #22c55e; color: #fff; box-shadow: 0 0 12px #22c55e; }
 .bingo-cell.free      { background: #7c3aed; color: #fff; }
 
-/* ── Info bar tiles ── */
+/* Info bar tiles */
 .info-tile {
   background: rgba(255,255,255,0.07);
   border-radius: 8px;
@@ -104,7 +104,7 @@ body {
 .info-tile-label { font-size: 10px; color: rgba(255,255,255,0.5); margin-bottom: 2px; }
 .info-tile-value { font-size: 15px; font-weight: 800; color: #fff; }
 
-/* ── Number badge ── */
+/* Number badge */
 .num-badge {
   display: inline-flex;
   align-items: center;
@@ -123,7 +123,7 @@ body {
 .badge-g { background: #22c55e; }
 .badge-o { background: #f97316; }
 
-/* ── Current number circle ── */
+/* Current number circle */
 .current-number-circle {
   width: 140px;
   height: 140px;
@@ -138,7 +138,7 @@ body {
 .current-number-letter { font-size: 42px; font-weight: 900; color: #6d28d9; line-height: 1; }
 .current-number-num    { font-size: 52px; font-weight: 900; color: #1e1b4b; line-height: 1; }
 
-/* ── Winner overlay ── */
+/* Winner overlay */
 .winner-overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.85);
@@ -154,7 +154,7 @@ body {
   text-align: center;
 }
 
-/* ── Bottom nav ── */
+/* Bottom nav */
 .bottom-nav {
   position: fixed; bottom: 0; left: 0; right: 0;
   background: rgba(15,11,30,0.96);
@@ -174,13 +174,13 @@ body {
 .nav-btn.active { color: #818cf8; }
 .nav-btn svg { width: 22px; height: 22px; }
 
-/* ── Pulse animation for current number ── */
+/* Pulse animation for current number */
 @keyframes ping-soft {
   0%, 100% { box-shadow: 0 0 40px rgba(245,158,11,0.6); }
   50%       { box-shadow: 0 0 70px rgba(245,158,11,0.9); }
 }
 .current-number-circle { animation: ping-soft 1.2s ease-in-out infinite; }
 
-/* ── Timer colors ── */
+/* Timer colors */
 .timer-urgent { color: #f87171; }
 .timer-normal { color: #fbbf24; }
