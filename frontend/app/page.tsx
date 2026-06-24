@@ -24,7 +24,7 @@ export default function Home() {
           setLoading(false);
           
           // Load stats in background (non-blocking)
-          api.getPlatformStats().then(setStats).catch(() => {});
+          api.getPlatformStats().then((data) => setStats(data as any)).catch(() => {});
           
           // Check for active game and redirect if needed
           await checkActiveGame(userData);
@@ -39,7 +39,7 @@ export default function Home() {
         sessionStorage.setItem('user', JSON.stringify(userData));
 
         // Load stats in parallel (non-blocking)
-        api.getPlatformStats().then(setStats).catch(() => {});
+        api.getPlatformStats().then((data) => setStats(data as any)).catch(() => {});
         
         // Check for active game and redirect if needed
         await checkActiveGame(userData);
@@ -65,7 +65,7 @@ export default function Home() {
       const gameId = gameData.game_id;
       
       // Fetch latest game state
-      const game = await api.getGame(gameId);
+      const game = await api.getGame(gameId) as any;
       
       // If game is WAITING or COUNTDOWN, redirect to card selection
       if (game.status === 'waiting' || game.status === 'countdown') {

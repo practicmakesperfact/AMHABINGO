@@ -10,6 +10,7 @@ export function useWebSocket(gameId: string | null, userId: number | null) {
     addCalledNumber,
     setCurrentNumber,
     setCurrentGame,
+    currentGame,
   } = useGameStore();
 
   useEffect(() => {
@@ -49,7 +50,9 @@ export function useWebSocket(gameId: string | null, userId: number | null) {
     // Handle game started
     wsClient.on('game_started', (data) => {
       console.log('Game started:', data);
-      setCurrentGame((prev: any) => prev ? { ...prev, status: 'active' } : null);
+      if (currentGame) {
+        setCurrentGame({ ...currentGame, status: 'active' });
+      }
     });
 
     // Handle number called

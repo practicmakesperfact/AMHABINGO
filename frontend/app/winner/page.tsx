@@ -8,7 +8,7 @@ import { useTelegram } from '@/hooks/useTelegram';
 export default function WinnerPage() {
   const router = useRouter();
   const { currentGame, currentPlayer, user } = useGameStore();
-  const { hapticFeedback } = useTelegram();
+  const { hapticNotification } = useTelegram();
 
   useEffect(() => {
     if (!currentGame || !currentPlayer) {
@@ -17,9 +17,9 @@ export default function WinnerPage() {
     }
 
     if (currentPlayer.has_won) {
-      hapticFeedback('success');
+      hapticNotification('success');
     }
-  }, [currentGame, currentPlayer, router, hapticFeedback]);
+  }, [currentGame, currentPlayer, router, hapticNotification]);
 
   const handleBackHome = () => {
     router.push('/');
