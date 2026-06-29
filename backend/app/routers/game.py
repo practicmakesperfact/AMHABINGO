@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Header, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Header, WebSocket, WebSocketDisconnect, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List, Optional
@@ -139,9 +139,38 @@ async def get_game_players(game_id: str, db: AsyncSession = Depends(get_db)):
     return players_result.scalars().all()
 
 
-# ─── Available Cards ──────────────────────────────────────────────────────────
+# ─── Cards Status (lightweight — only returns taken cards) ───────────────────
+@router.get("/{game_id}/cards-status")
+async def get_cards_status(game_id: str, response: Response, db: AsyncSession = Depends(get_db)):
+    """
+    Lightweight endpoint: returns ONLY the taken cards dict (card_number -> user_id).
+    Much faster than /available-cards because it doesn't build a 600-item available list.
+    Frontend computes available = all cards not in taken.
+    """
+    result = await db.execute(select(Game).where(Game.game_id == game_id))
+    game = result.scalar_one_or_none()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    taken_cards: dict = {}
+    try:
+        taken_cards = await redis_client.get_all_taken_cards(game_id)
+    except Exception:
+        pass
+
+    # Allow short-term caching (2s) to reduce hammering under 600 users
+    response.headers["Cache-Control"] = "public, max-age=2"
+
+    return {
+        "taken_cards": taken_cards,
+        "total_taken": len(taken_cards),
+        "game_status": game.status.value,
+    }
+
+
+# ─── Available Cards (full list — kept for compatibility) ─────────────────────
 @router.get("/{game_id}/available-cards")
-async def get_available_cards(game_id: str, db: AsyncSession = Depends(get_db)):
+async def get_available_cards(game_id: str, response: Response, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Game).where(Game.game_id == game_id))
     game = result.scalar_one_or_none()
     if not game:
@@ -156,11 +185,14 @@ async def get_available_cards(game_id: str, db: AsyncSession = Depends(get_db)):
     all_cards = set(range(1, 601))
     available = sorted(list(all_cards - set(taken_cards.keys())))
 
+    # 2-second cache to avoid hammering Redis on every page load
+    response.headers["Cache-Control"] = "public, max-age=2"
+
     return {
         "available_cards": available,
         "taken_cards": taken_cards,
         "total_available": len(available),
-        "total_taken": len(taken_cards)
+        "total_taken": len(taken_cards),
     }
 
 

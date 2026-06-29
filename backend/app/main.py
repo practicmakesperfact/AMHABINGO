@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from sqlalchemy import select
 import asyncio
+import time
 
 from .config import get_settings
 from .database import engine, Base, AsyncSessionLocal
@@ -11,25 +13,28 @@ from .routers import user, game, payment
 
 settings = get_settings()
 
+# Track server start time for uptime reporting
+_start_time = time.time()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
-    print("Starting AMHABINGO Backend...")
+    print("🚀 Starting AMHABINGO Backend...")
 
     # Create / migrate tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print("Database tables ready")
+    print("✅ Database tables ready")
 
-    # Redis (optional – game works without it)
+    # Redis (optional — game works without it via in-memory fallback)
     try:
         await redis_client.connect()
-        print("Redis connected")
+        print("✅ Redis connected")
     except Exception as e:
-        print(f"Redis unavailable ({e}) - using in-memory fallback")
+        print(f"⚠️  Redis unavailable ({e}) — using in-memory fallback")
 
-    # Resume game loops for any unfinished games
+    # Resume game loops for any unfinished games (after crash/restart)
     try:
         from .models import Game, GameStatus
         from .game_loop import game_loop_manager
@@ -45,22 +50,22 @@ async def lifespan(app: FastAPI):
             )
             pending = result.scalars().all()
             for g in pending:
-                print(f"Resuming loop for game {g.game_id} (status={g.status})")
+                print(f"♻️  Resuming loop for game {g.game_id} (status={g.status})")
                 asyncio.create_task(game_loop_manager.start_countdown_loop(g.game_id))
     except Exception as e:
-        print(f"Could not resume game loops: {e}")
+        print(f"⚠️  Could not resume game loops: {e}")
 
-    print("Backend ready!")
+    print("✅ Backend ready!")
     yield
 
     # Shutdown
-    print("Shutting down...")
+    print("🛑 Shutting down...")
     try:
         await redis_client.disconnect()
     except Exception:
         pass
     await engine.dispose()
-    print("Shutdown complete")
+    print("✅ Shutdown complete")
 
 
 app = FastAPI(
@@ -70,13 +75,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS ─────────────────────────────────────────────────────────────────────
+# ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # tighten in production
+    allow_origins=["*"],            # Tighten to FRONTEND_URL in production if needed
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],          # includes ngrok-skip-browser-warning
+    allow_headers=["*"],
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
@@ -85,14 +90,28 @@ app.include_router(game.router)
 app.include_router(payment.router)
 
 
-# ── Health endpoints ──────────────────────────────────────────────────────────
+# ── Health & Keep-alive endpoints ─────────────────────────────────────────────
+
 @app.get("/")
 async def root():
     return {"status": "ok", "message": "AMHABINGO API is running", "version": "1.0.0"}
 
 
+@app.get("/ping")
+async def ping():
+    """
+    Ultra-lightweight keep-alive endpoint.
+    Used by:
+      - UptimeRobot / cron-job.org to prevent Render free-plan sleep
+      - Frontend polling to detect when server has woken up
+    Returns in < 1ms — does NOT touch DB or Redis.
+    """
+    return {"pong": True, "uptime": round(time.time() - _start_time)}
+
+
 @app.get("/health")
 async def health_check():
+    """Detailed health check for monitoring."""
     redis_ok = False
     try:
         if redis_client.redis:
@@ -100,10 +119,12 @@ async def health_check():
             redis_ok = True
     except Exception:
         pass
+
     return {
         "status": "ok",
-        "redis": "connected" if redis_ok else "disconnected",
+        "redis": "connected" if redis_ok else "disconnected (in-memory fallback active)",
         "database": "connected",
+        "uptime_seconds": round(time.time() - _start_time),
     }
 
 

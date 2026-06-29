@@ -20,66 +20,109 @@ class WebSocketClient {
   private userId: number | null = null;
   private handlers: Map<WSMessageType, Set<WSEventHandler>> = new Map();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 2000;
+  private maxReconnectAttempts = 8;
+  private _manualDisconnect = false;
+  private _connectResolver: (() => void) | null = null;
+  private _connectRejecter: ((e: Error) => void) | null = null;
 
   async connect(gameId: string, userId: number): Promise<void> {
     this.gameId = gameId;
     this.userId = userId;
+    this._manualDisconnect = false;
+    this.reconnectAttempts = 0;
 
+    return this._openConnection();
+  }
+
+  private _openConnection(): Promise<void> {
     return new Promise((resolve, reject) => {
+      if (!this.gameId || !this.userId) {
+        reject(new Error('No gameId/userId'));
+        return;
+      }
+
       try {
-        const url = `${WS_URL}/api/games/ws/${gameId}?user_id=${userId}`;
-        console.log('Attempting WebSocket connection to:', url);
+        const url = `${WS_URL}/api/games/ws/${this.gameId}?user_id=${this.userId}`;
+        console.log(`🔌 WebSocket connecting to: ${url}`);
         this.ws = new WebSocket(url);
+        this._connectResolver = resolve;
+        this._connectRejecter = reject;
+
+        // Connection timeout — if no open event in 10s, fail
+        const timeoutId = setTimeout(() => {
+          if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+            this.ws.close();
+            reject(new Error('WebSocket connection timed out'));
+          }
+        }, 10_000);
 
         this.ws.onopen = () => {
-          console.log('✅ WebSocket connected successfully');
+          clearTimeout(timeoutId);
+          console.log('✅ WebSocket connected');
           this.reconnectAttempts = 0;
           resolve();
+          this._connectResolver = null;
+          this._connectRejecter = null;
         };
 
         this.ws.onmessage = (event) => {
           try {
             const message = JSON.parse(event.data);
-            this.handleMessage(message);
+            this._handleMessage(message);
           } catch (error) {
             console.error('Failed to parse WebSocket message:', error);
           }
         };
 
-        this.ws.onerror = (error) => {
-          console.error('❌ WebSocket error - Backend may not be running on port 8000');
-          reject(new Error('WebSocket connection failed'));
+        this.ws.onerror = () => {
+          clearTimeout(timeoutId);
+          // onerror is always followed by onclose — let onclose drive reconnect
+          if (this._connectRejecter) {
+            this._connectRejecter(new Error('WebSocket connection failed'));
+            this._connectResolver = null;
+            this._connectRejecter = null;
+          }
         };
 
         this.ws.onclose = (event) => {
-          console.log('WebSocket closed:', event.code, event.reason);
-          this.attemptReconnect();
+          clearTimeout(timeoutId);
+          console.log(`WebSocket closed: code=${event.code} reason=${event.reason || 'none'}`);
+          if (!this._manualDisconnect) {
+            this._scheduleReconnect();
+          }
         };
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to create WebSocket:', error);
         reject(error);
       }
     });
   }
 
-  private attemptReconnect(): void {
+  private _scheduleReconnect(): void {
     if (
-      this.reconnectAttempts < this.maxReconnectAttempts &&
-      this.gameId &&
-      this.userId
+      this._manualDisconnect ||
+      this.reconnectAttempts >= this.maxReconnectAttempts ||
+      !this.gameId ||
+      !this.userId
     ) {
-      this.reconnectAttempts++;
-      console.log(
-        `⚠️ WebSocket failed - continuing without real-time updates`
-      );
-      // Don't auto-reconnect to avoid console spam and page blinking
-      // User can refresh page to retry connection
+      return;
     }
+
+    this.reconnectAttempts++;
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s … capped at 30s
+    const delay = Math.min(1000 * 2 ** (this.reconnectAttempts - 1), 30_000);
+    console.log(`⏳ WebSocket reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+
+    setTimeout(() => {
+      if (!this._manualDisconnect) {
+        this._openConnection().catch(() => {
+          // If still failing, _scheduleReconnect() will be called again by onclose
+        });
+      }
+    }, delay);
   }
 
-  private handleMessage(message: any): void {
+  private _handleMessage(message: any): void {
     const { type, data } = message;
     const handlers = this.handlers.get(type as WSMessageType);
     if (handlers) {
@@ -95,17 +138,14 @@ class WebSocketClient {
   }
 
   off(event: WSMessageType, handler: WSEventHandler): void {
-    const handlers = this.handlers.get(event);
-    if (handlers) {
-      handlers.delete(handler);
-    }
+    this.handlers.get(event)?.delete(handler);
   }
 
   send(type: string, data: any): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type, ...data }));
+      this.ws.send(JSON.stringify({ type, data }));
     } else {
-      console.warn('WebSocket is not connected');
+      console.warn('⚠️ WebSocket not connected — message dropped:', type);
     }
   }
 
@@ -122,6 +162,7 @@ class WebSocketClient {
   }
 
   disconnect(): void {
+    this._manualDisconnect = true;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -137,10 +178,10 @@ class WebSocketClient {
   }
 }
 
-// Singleton instance
+// Singleton instance for pages that share state
 export const wsClient = new WebSocketClient();
 
-// Helper functions for game pages that need a fresh instance
+// Per-page instance management
 let gameWsClient: WebSocketClient | null = null;
 
 export function getWsClient(): WebSocketClient {

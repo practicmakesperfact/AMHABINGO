@@ -1,7 +1,13 @@
 """
 Game loop manager.
 Handles: countdown → active → finish → auto-create next game.
-Works with or without Redis.
+
+Performance-critical changes vs original:
+- mark_number_on_all_cards() is NO LONGER called every second.
+  Numbers are only tracked in Redis (called_numbers list).
+  The frontend marks numbers locally by comparing the card to called numbers.
+  DB player records are only updated once, at game end (winners).
+- This eliminates 600 DB writes per second under full load.
 """
 
 import asyncio
@@ -51,6 +57,8 @@ class GameLoopManager:
             pass
         except Exception as e:
             print(f"❌ Game loop error [{game_id}]: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.active_loops.pop(game_id, None)
 
@@ -85,21 +93,20 @@ class GameLoopManager:
 
     # ── Main game loop ────────────────────────────────────────────────────────
     async def _game_loop(self, game_id: str):
-        # Longer delay after countdown to allow last-second joins (increased from 2s to 5s)
-        await asyncio.sleep(5)
-        
+        # Short delay after countdown to allow last-second joins
+        await asyncio.sleep(3)
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Game).where(Game.game_id == game_id))
             game = result.scalar_one_or_none()
             if not game:
                 return
 
-            # Check if game has players
+            # No players — skip immediately
             if game.total_players == 0:
-                # No players, finish immediately and create next game
                 game.status = GameStatus.FINISHED
                 await db.commit()
-                print(f"⚠️ Game {game_id} (stake={game.entry_fee}) has no players, finishing and creating next game")
+                print(f"⚠️  Game {game_id} (stake={game.entry_fee}) has no players — finishing")
                 await asyncio.sleep(3)
                 await self._create_next_game(game_id)
                 return
@@ -114,76 +121,129 @@ class GameLoopManager:
             game_manager = GameManager(db)
 
             while True:
-                # Refresh game state
+                # Refresh game state from DB
                 await db.refresh(game)
-                
-                # Check if game was stopped externally
+
+                # Stop if externally cancelled
                 if game.status != GameStatus.ACTIVE:
                     print(f"Game {game_id} stopped externally")
                     break
 
-                # Call next number
+                # Pop next number from the pre-shuffled deck
                 number = await game_manager.call_number(game_id)
                 if number is None:
-                    # All 75 called, no winner
-                    print(f"Game {game_id} finished - all numbers called, no winner")
+                    # All 75 numbers called — no winner
+                    print(f"Game {game_id}: all 75 numbers called, no winner")
                     await game_manager.finish_game(game_id, [])
                     await broadcast_player_won(game_id, [])
                     break
 
                 letter = BingoGameEngine.get_number_category(number)
                 print(f"Game {game_id}: Called {letter}-{number}")
-                
-                # IMMEDIATELY mark this number on ALL player cards (like real Bingo)
-                await game_manager.mark_number_on_all_cards(game_id, number)
-                
-                # Broadcast to frontend
+
+                # ──────────────────────────────────────────────────────────────
+                # PERFORMANCE FIX: Do NOT call mark_number_on_all_cards() here.
+                # The number is already stored in game.called_numbers (DB) and
+                # redis called-numbers list.  The frontend marks cards locally.
+                # Server-side win detection reads called_numbers from DB and
+                # re-checks each player's card only when needed.
+                # ──────────────────────────────────────────────────────────────
+
+                # Broadcast to frontend — clients mark their own cards
                 await broadcast_number_called(game_id, number, letter)
 
-                # Brief pause before win check
-                await asyncio.sleep(0.5)
-
-                # CHECK FOR WINNERS IMMEDIATELY
-                winners = await game_manager.check_winners(game_id)
+                # Check for winners using called_numbers already in DB
+                # (re-marks server-side only for winner validation)
+                winners = await self._check_winners_fast(game_id, db)
                 if winners:
                     print(f"🎉 BINGO! Game {game_id} has {len(winners)} winner(s)")
-                    
-                    # IMMEDIATELY mark game as finished in THIS session
+
+                    # Mark game finished immediately
                     await db.refresh(game)
                     game.status = GameStatus.FINISHED
                     game.finished_at = datetime.utcnow()
                     await db.commit()
-                    
+
                     winner_ids = [w.user_id for w in winners]
                     prize = await game_manager.finish_game(game_id, winner_ids)
 
-                    # Prepare winner data for broadcast
+                    # Build winner broadcast payload
                     winner_data = []
                     for w in winners:
                         u_res = await db.execute(select(User).where(User.id == w.user_id))
                         u = u_res.scalar_one_or_none()
                         winner_data.append({
-                            "user_id": w.user_id,
-                            "username": (u.username or u.first_name) if u else f"Player{w.user_id}",
-                            "card_number": w.card_number,
-                            "card_data": w.card_data,
+                            "user_id":        w.user_id,
+                            "username":       (u.username or u.first_name) if u else f"Player{w.user_id}",
+                            "card_number":    w.card_number,
+                            "card_data":      w.card_data,
                             "winning_pattern": w.winning_pattern,
-                            "prize_amount": prize or 0,
+                            "prize_amount":   prize or 0,
                         })
 
-                    # Broadcast winner to all clients
                     await broadcast_player_won(game_id, winner_data)
-                    print(f"✅ Game {game_id} finished - winner announced")
-                    
-                    # STOP THE LOOP IMMEDIATELY
+                    print(f"✅ Game {game_id} finished — winner announced")
                     break
 
                 # Wait before calling next number
                 await asyncio.sleep(settings.GAME_INTERVAL_SECONDS)
 
-        # Give players time to see winner announcement before auto-creating next game
+        # Give players time to see winner screen before next game starts
         await asyncio.sleep(10)
         await self._create_next_game(game_id)
+
+    # ── Fast winner check (no per-number DB writes) ───────────────────────────
+    async def _check_winners_fast(self, game_id: str, db) -> list:
+        """
+        Check all players for winning patterns WITHOUT marking numbers in DB.
+        Numbers are read from game.called_numbers (already updated by call_number()).
+        This replaces the O(N×600) DB-write approach.
+        """
+        from sqlalchemy.orm.attributes import flag_modified
+
+        # Refresh game to get latest called_numbers
+        result = await db.execute(select(Game).where(Game.game_id == game_id))
+        game = result.scalar_one_or_none()
+        if not game:
+            return []
+
+        called = set(game.called_numbers or [])
+
+        # Get players who haven't won yet
+        players_result = await db.execute(
+            select(Player).where(
+                Player.game_id == game.id,
+                Player.has_won.is_(False),
+            )
+        )
+        players = players_result.scalars().all()
+
+        winners = []
+        for player in players:
+            # Recompute marked positions from called numbers (no DB write)
+            marked = []
+            card = player.card_data  # [[col0 nums], [col1 nums], ...]
+            for col_idx in range(5):
+                for row_idx in range(5):
+                    num = card[col_idx][row_idx]
+                    if num == 0 or num in called:          # 0 = FREE space
+                        flat_idx = row_idx * 5 + col_idx
+                        if flat_idx not in marked:
+                            marked.append(flat_idx)
+
+            has_won, pattern = BingoGameEngine.check_win(card, marked)
+            if has_won:
+                player.has_won = True
+                player.winning_pattern = pattern
+                player.marked_numbers = marked   # persist final state for winner
+                flag_modified(player, "marked_numbers")
+                winners.append(player)
+                print(f"🎉 Player {player.user_id} won with pattern: {pattern}")
+
+        if winners:
+            await db.commit()
+
+        return winners
 
     # ── Auto-create next game ─────────────────────────────────────────────────
     async def _create_next_game(self, old_game_id: str):
@@ -194,18 +254,20 @@ class GameLoopManager:
                 if not old:
                     return
 
-                # Always create next game for this stake level to keep games available
                 gm = GameManager(db)
                 new_game = await gm.create_game(old.room, old.entry_fee)
                 print(f"✅ Next game created: {new_game.game_id} (stake={old.entry_fee})")
 
-                # Tell all connected clients
-                await ws_manager.broadcast_to_game({
-                    "type": "next_game",
-                    "data": {"game_id": new_game.game_id, "entry_fee": old.entry_fee},
-                }, old_game_id)
+                # Notify all clients still connected to the old game room
+                await ws_manager.broadcast_to_game(
+                    {
+                        "type": "next_game",
+                        "data": {"game_id": new_game.game_id, "entry_fee": old.entry_fee},
+                    },
+                    old_game_id,
+                )
 
-                # Start its countdown
+                # Start countdown for the new game
                 await self.start_countdown_loop(new_game.game_id)
 
         except Exception as e:
