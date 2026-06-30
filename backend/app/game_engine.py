@@ -82,12 +82,12 @@ class BingoGameEngine:
                 
                 # Check number is in valid range for this column
                 if not (start <= num <= end):
-                    print(f"❌ Invalid number {num} in column {col_idx} (expected {start}-{end})")
+                    print(f"Invalid number {num} in column {col_idx} (expected {start}-{end})")
                     return False
                 
                 # Check for duplicates
                 if num in all_numbers:
-                    print(f"❌ Duplicate number {num} found")
+                    print(f"Duplicate number {num} found")
                     return False
                 
                 all_numbers.add(num)
@@ -224,9 +224,10 @@ class GameManager:
             "current_number": None
         })
         
+        await redis_client.init_remaining_numbers(game_id, remaining_numbers)
         await redis_client.add_active_game(game_id)
         
-        print(f"✅ Created game {game_id} with shuffled deck: {remaining_numbers[:10]}... (showing first 10)")
+        print(f"Created game {game_id} with shuffled deck: {remaining_numbers[:10]}... (showing first 10)")
         
         return game
     
@@ -274,7 +275,7 @@ class GameManager:
         if not BingoGameEngine.validate_bingo_card(card_data):
             raise ValueError(f"Cartela {card_number} has invalid card data")
         
-        print(f"✅ Using permanent cartela {card_number} for user {user_id}")
+        print(f"Using permanent cartela {card_number} for user {user_id}")
         
         # Create player
         player = Player(
@@ -340,39 +341,17 @@ class GameManager:
     async def call_number(self, game_id: str) -> Optional[int]:
         """
         Call next number using pop() method (like real Bingo).
-        Numbers are popped from pre-shuffled deck - GUARANTEES no duplicates.
+        Numbers are popped from pre-shuffled deck in Redis - GUARANTEES no duplicates.
         """
-        result = await self.db.execute(
-            select(Game).where(Game.game_id == game_id)
-        )
-        game = result.scalar_one_or_none()
-        if not game or game.status != GameStatus.ACTIVE:
+        # Pop next number from shuffled deck in Redis
+        number = await redis_client.pop_remaining_number(game_id)
+        if number is None:
             return None
-        
-        # Get remaining numbers (make a copy to work with)
-        remaining = game.remaining_numbers or []
-        if not remaining:
-            return None
-        
-        # Pop next number from shuffled deck
-        number = remaining.pop()
-        
-        # Update database - IMPORTANT: Reassign to trigger SQLAlchemy change detection
-        game.remaining_numbers = remaining
-        game.called_numbers = (game.called_numbers or []) + [number]
-        game.current_number = number
-        
-        # Mark as modified for SQLAlchemy (for JSON columns)
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(game, "remaining_numbers")
-        flag_modified(game, "called_numbers")
-        
-        await self.db.commit()
         
         # Update Redis
         await redis_client.add_called_number(game_id, number)
         
-        print(f"📞 Called number {number} | Remaining: {len(game.remaining_numbers)}/75")
+        print(f"Called number {number}")
         
         return number
     
@@ -416,7 +395,7 @@ class GameManager:
         
         # Commit all marks to database
         await self.db.commit()
-        print(f"✅ Marked number {number} on {len(players)} player cards")
+        print(f"Marked number {number} on {len(players)} player cards")
     
     async def check_winners(self, game_id: str) -> List[Player]:
         """
@@ -440,7 +419,7 @@ class GameManager:
         winners = []
         for player in players:
             # DEBUG: Print marked numbers
-            print(f"🔍 Checking player {player.user_id}: {len(player.marked_numbers)} marked")
+            print(f"Checking player {player.user_id}: {len(player.marked_numbers)} marked")
             print(f"   Marked indices: {player.marked_numbers}")
             
             # Check for win using already-marked numbers
@@ -453,7 +432,7 @@ class GameManager:
                 player.has_won = True
                 player.winning_pattern = pattern
                 winners.append(player)
-                print(f"🎉 Player {player.user_id} won with pattern: {pattern}")
+                print(f"Player {player.user_id} won with pattern: {pattern}")
             else:
                 print(f"   No win yet")
         
@@ -473,7 +452,7 @@ class GameManager:
         
         # Prevent duplicate processing
         if game.status == GameStatus.FINISHED:
-            print(f"⚠️ Game {game_id} already finished, skipping payout")
+            print(f"Game {game_id} already finished, skipping payout")
             return None
         
         game.status = GameStatus.FINISHED
@@ -489,8 +468,8 @@ class GameManager:
         total_prize = game.prize_pool - commission
         prize_per_winner = total_prize / len(winner_ids)
         
-        print(f"💰 Prize pool: {game.prize_pool} ETB, Commission: {commission} ETB")
-        print(f"💰 Prize per winner: {prize_per_winner} ETB ({len(winner_ids)} winner(s))")
+        print(f"Prize pool: {game.prize_pool} ETB, Commission: {commission} ETB")
+        print(f"Prize per winner: {prize_per_winner} ETB ({len(winner_ids)} winner(s))")
         
         # Update winner balances
         for user_id in winner_ids:
@@ -502,7 +481,10 @@ class GameManager:
                     wins=User.wins + 1
                 )
             )
-            print(f"✅ Paid {prize_per_winner} ETB to user {user_id}")
+            print(f"Paid {prize_per_winner} ETB to user {user_id}")
+            
+            # Update Redis Leaderboard
+            await redis_client.increment_leaderboard(user_id)
         
         await self.db.commit()
         

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
-import { getWsClient } from '@/lib/websocket';
+import { resetWsClient } from '@/lib/websocket';
 
 /* types */
 interface Winner {
@@ -107,6 +107,8 @@ function GameInner() {
   const [fullCard,      setFullCard]      = useState<number[][] | null>(null); // Store full 5x5 card
   const [muted,         setMuted]         = useState(false);
   const [loading,       setLoading]       = useState(true);
+  const [gameStarting,  setGameStarting]  = useState(false); // grace period countdown
+  const [startingIn,    setStartingIn]    = useState(0);     // seconds until game starts
   const automatic = true; // Always ON, not changeable
 
   const mutableMuted = useRef(false);
@@ -147,16 +149,12 @@ function GameInner() {
 
         setGame(g);
         
-        // Set called numbers from game state
-        const initialCalled = (g as any).called_numbers || [];
-        setCalledNums(initialCalled);
-        
-        // Set current number
-        const initialCurrent = (g as any).current_number ?? null;
-        setCurrentNum(initialCurrent);
-        
-        // Set recent numbers (last 8 called)
-        setRecentNums(initialCalled.slice(-8).reverse());
+        // NOTE: called_numbers are now Redis-only (not in DB).
+        // They are delivered via the WebSocket 'initial_state' event below.
+        // Initialize to empty here; WS will populate them.
+        setCalledNums([]);
+        setCurrentNum(null);
+        setRecentNums([]);
 
         if (pcData) {
           // Store full 5x5 card
@@ -168,8 +166,9 @@ function GameInner() {
 
         setLoading(false);
 
-        // Connect WebSocket
-        const ws = getWsClient();
+        // Connect WebSocket — use resetWsClient to get a CLEAN client
+        // with no stale handlers from the cards page.
+        const ws = resetWsClient();
         try {
           await ws.connect(gameId, u?.id ?? 0);
           setWsConnected(true);
@@ -213,7 +212,7 @@ function GameInner() {
           }
           
           // Start next-game countdown
-          let count = 8;
+          let count = 5;
           setNextGameTimer(count);
           const t = setInterval(() => {
             count--;
@@ -229,10 +228,22 @@ function GameInner() {
 
         ws.on('timer_update', (d: any) => {
           setGame((prev: any) => prev ? { ...prev, _timer: d.seconds } : prev);
+          // When timer hits 0 on game page, show grace period countdown (8s)
+          if (d.seconds === 0 && !currentNum) {
+            setGameStarting(true);
+            setStartingIn(8);
+            const t = setInterval(() => {
+              setStartingIn(prev => {
+                if (prev <= 1) { clearInterval(t); setGameStarting(false); return 0; }
+                return prev - 1;
+              });
+            }, 1000);
+          }
         });
 
         ws.on('game_started', () => {
           setGame((prev: any) => prev ? { ...prev, status: 'active' } : prev);
+          setGameStarting(false);
         });
         
         // Listen for game state updates (players, prize pool, etc.)
@@ -245,12 +256,19 @@ function GameInner() {
         });
         
         ws.on('initial_state', (d: any) => {
+          // Restore called numbers from Redis via initial_state
           if (d.game_state) {
             setGame((prev: any) => ({
               ...prev,
               total_players: d.game_state.total_players ?? prev?.total_players,
               prize_pool: d.game_state.prize_pool ?? prev?.prize_pool,
             }));
+          }
+          // Restore called numbers history if server sends them
+          if (d.called_numbers && Array.isArray(d.called_numbers)) {
+            setCalledNums(d.called_numbers);
+            setCurrentNum(d.called_numbers[d.called_numbers.length - 1] ?? null);
+            setRecentNums([...d.called_numbers].reverse().slice(0, 8));
           }
         });
 
@@ -264,7 +282,7 @@ function GameInner() {
 
     init();
     return () => { 
-      getWsClient().disconnect(); 
+      resetWsClient();
       initRef.current = false;
     };
   }, [gameId]);
@@ -380,7 +398,11 @@ function GameInner() {
           {/* Recent numbers (no sound button) */}
           <div className="flex items-center gap-2 bg-slate-800/40 rounded-xl px-3 py-1.5 flex-shrink-0 border border-slate-700/50">
             <div className="flex gap-1 overflow-x-auto flex-1">
-              {recentNums.length === 0 && <span className="text-white/30 text-[10px]">Waiting...</span>}
+              {recentNums.length === 0 && (
+                <span className="text-white/30 text-[10px]">
+                  {gameStarting ? `🚀 Starting in ${startingIn}s…` : 'Waiting for game to start…'}
+                </span>
+              )}
               {recentNums.map((n, i) => {
                 const l = getLetter(n);
                 return (

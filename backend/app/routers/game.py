@@ -48,13 +48,13 @@ async def create_game(
 
     # If found, return it
     if game:
-        print(f"♻️ Reusing existing game {game.game_id} for stake {game_data.entry_fee}")
+        print(f"Reusing existing game {game.game_id} for stake {game_data.entry_fee}")
         return game
 
     # Otherwise, create a new game
     game_manager = GameManager(db)
     game = await game_manager.create_game(game_data.room, game_data.entry_fee)
-    print(f"✨ Created new game {game.game_id} for stake {game_data.entry_fee}")
+    print(f"Created new game {game.game_id} for stake {game_data.entry_fee}")
 
     # Auto-start countdown loop
     loop_mgr = _get_game_loop_manager()
@@ -305,11 +305,27 @@ async def websocket_endpoint(websocket: WebSocket, game_id: str, user_id: int = 
         except Exception:
             pass
 
+        # Also get called numbers (now Redis-only, not in DB)
+        called_numbers = []
+        try:
+            called_numbers = await redis_client.get_called_numbers(game_id)
+        except Exception:
+            pass
+
+        # Get timer remaining for clients connecting mid-countdown
+        timer_remaining = None
+        try:
+            timer_remaining = await redis_client.get_timer(game_id)
+        except Exception:
+            pass
+
         await manager.send_personal_message({
             "type": "initial_state",
             "data": {
                 "taken_cards": taken_cards,
-                "game_state": game_state
+                "game_state": game_state,
+                "called_numbers": called_numbers,
+                "timer_remaining": timer_remaining,
             }
         }, websocket)
 

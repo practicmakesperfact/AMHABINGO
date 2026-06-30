@@ -40,8 +40,8 @@ class ConnectionManager:
         except Exception as e:
             print(f"Error sending personal message: {e}")
 
-    async def broadcast_to_game(self, message: dict, game_id: str):
-        """Broadcast a message to every connection in a game room."""
+    async def _local_broadcast_to_game(self, message: dict, game_id: str):
+        """Actually sends the message to local websockets (Called by Redis listener)."""
         if game_id not in self.active_connections:
             return
 
@@ -58,10 +58,20 @@ class ConnectionManager:
         for connection in disconnected:
             self.disconnect(connection, game_id)
 
+    async def broadcast_to_game(self, message: dict, game_id: str):
+        """Broadcast a message to every connection in a game room by publishing to Redis."""
+        if redis_client._available:
+            await redis_client.publish("game_updates", {"game_id": game_id, "message": message})
+        else:
+            await self._local_broadcast_to_game(message, game_id)
+
     async def broadcast_to_all(self, message: dict):
         """Broadcast a message to all active connections across all games."""
-        for game_id in list(self.active_connections.keys()):
-            await self.broadcast_to_game(message, game_id)
+        if redis_client._available:
+            await redis_client.publish("game_updates", {"game_id": "ALL", "message": message})
+        else:
+            for game_id in list(self.active_connections.keys()):
+                await self._local_broadcast_to_game(message, game_id)
 
     def get_game_connections_count(self, game_id: str) -> int:
         return len(self.active_connections.get(game_id, set()))
@@ -178,6 +188,11 @@ async def broadcast_timer_update(game_id: str, seconds: int):
         {"type": "timer_update", "data": {"seconds": seconds}}, game_id
     )
 
+
+async def broadcast_countdown_started(game_id: str, seconds: int, starts_at: float):
+    await manager.broadcast_to_game(
+        {"type": "countdown_started", "data": {"seconds": seconds, "starts_at": starts_at}}, game_id
+    )
 
 async def broadcast_game_started(game_id: str):
     await manager.broadcast_to_game(

@@ -74,16 +74,16 @@ async def init_db():
 
     for attempt in range(max_retries):
         try:
-            print(f"🔧 Initialising database (attempt {attempt + 1}/{max_retries})...")
+            print(f"Initialising database (attempt {attempt + 1}/{max_retries})...")
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-            print("✅ Database tables ready!")
+            print("Database tables ready!")
             return
         except Exception as e:
             if attempt < max_retries - 1:
-                print(f"⚠️  DB init failed: {str(e)[:120]}")
-                print(f"⏳ Retrying in {retry_delay}s...")
+                print(f"DB init failed: {str(e)[:120]}")
+                print(f"Retrying in {retry_delay}s...")
                 await asyncio.sleep(retry_delay)
             else:
-                print(f"❌ DB init failed after {max_retries} attempts")
+                print(f"DB init failed after {max_retries} attempts")
                 raise

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, Suspense, useCallback } from 'react';
+import { useEffect, useState, useRef, Suspense, useCallback, memo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { resetWsClient } from '@/lib/websocket';
@@ -47,6 +47,57 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
+/* ── Memoized Card Button ────────────────────────────────────────────────── */
+const BingoCardButton = memo(function BingoCardButton({
+  n,
+  isTaken,
+  isMyCard,
+  isSelected,
+  isDisabled,
+  onClick
+}: {
+  n: number;
+  isTaken: boolean;
+  isMyCard: boolean;
+  isSelected: boolean;
+  isDisabled: boolean;
+  onClick: (n: number) => void;
+}) {
+  return (
+    <button
+      disabled={isDisabled}
+      onClick={() => onClick(n)}
+      style={{
+        background: isSelected
+          ? '#22c55e'
+          : isMyCard
+          ? '#16a34a'
+          : isTaken
+          ? '#ea580c'
+          : 'rgba(71,85,105,0.5)',
+        border: isSelected
+          ? '2px solid #22c55e'
+          : isMyCard
+          ? '2px solid #16a34a'
+          : isTaken
+          ? '2px solid #ea580c'
+          : '1.5px solid rgba(100,116,139,0.4)',
+        color: '#fff',
+        borderRadius: '10px',
+        aspectRatio: '1',
+        fontSize: '13px',
+        fontWeight: '700',
+        cursor: isTaken ? 'not-allowed' : 'pointer',
+        transition: 'background 0.1s, transform 0.1s',
+        transform: isSelected ? 'scale(1.08)' : 'scale(1)',
+        opacity: isTaken ? 0.6 : 1,
+      }}
+    >
+      {n}
+    </button>
+  );
+});
+
 /* ── Inner component (needs Suspense for useSearchParams) ─────────────────── */
 function CardsInner() {
   const router  = useRouter();
@@ -65,15 +116,21 @@ function CardsInner() {
 
   const wsRef   = useRef<ReturnType<typeof resetWsClient> | null>(null);
   const initRef = useRef(false);
+  const joiningRef = useRef(false); // Prevent double autoJoin
 
   /* ── Auto-join ────────────────────────────────────────────────────────── */
   const autoJoin = useCallback(async (gameId: string, u: any) => {
+    // Guard: prevent double-join from timer=0 AND game_started firing simultaneously
+    if (joiningRef.current) return;
+    joiningRef.current = true;
+
     let card = selected;
     if (!card) {
       const avail = Array.from({ length: 600 }, (_, i) => i + 1).filter(n => !taken[n]);
       if (!avail.length) {
         alert('No cards available — all 600 cartelas are taken!');
         router.push('/');
+        joiningRef.current = false;
         return;
       }
       card = avail[Math.floor(Math.random() * avail.length)];
@@ -87,12 +144,25 @@ function CardsInner() {
 
       sessionStorage.setItem('myCard',   String(card));
       sessionStorage.setItem('myUserId', String(u?.id ?? 0));
+      
+      // ⚠️ Clear ALL websocket handlers BEFORE navigating so they
+      // cannot fire on the shared singleton in the game page.
+      wsRef.current?.disconnect();
+      wsRef.current = null;
+      
       router.push(`/game?game=${gameId}&card=${card}`);
     } catch (e: any) {
+      joiningRef.current = false;
       const msg = e.message || 'Unknown error';
-      if (msg.includes('already finished') || msg.includes('already started')) {
-        alert('This game is no longer joinable. Waiting for next game…');
+      if (msg.includes('already finished')) {
+        // Game is done — go back to lobby
         setLoading(false);
+        alert('This game has already finished. Waiting for the next game…');
+      } else if (msg.includes('already started')) {
+        // Game just started — navigate to game page as spectator (no card)
+        wsRef.current?.disconnect();
+        wsRef.current = null;
+        router.push(`/game?game=${gameId}`);
       } else {
         alert(`Failed to join: ${msg}`);
         setLoading(false);
@@ -172,6 +242,19 @@ function CardsInner() {
         ws.on('card_selected',    (d: any) => setTaken(prev => ({ ...prev, [d.card_number]: d.user_id })));
         ws.on('card_available',   (d: any) => setTaken(prev => { const n = { ...prev }; delete n[d.card_number]; return n; }));
         ws.on('timer_update',     (d: any) => setTimer(d.seconds));
+        ws.on('countdown_started', (d: any) => {
+          // Use starts_at (server epoch) to compute true remaining seconds
+          if (d.starts_at) {
+            const remaining = Math.max(0, Math.round(d.starts_at - Date.now() / 1000));
+            setTimer(remaining > 0 ? remaining : d.seconds);
+          } else {
+            setTimer(d.seconds);
+          }
+        });
+        ws.on('error', (d: any) => {
+          setSelected(null);
+          alert(d.message || 'An error occurred');
+        });
         ws.on('game_state_update', (d: any) => {
           setGame((prev: any) => ({
             ...prev,
@@ -179,10 +262,20 @@ function CardsInner() {
             prize_pool:    d.prize_pool    ?? prev?.prize_pool,
           }));
         });
-        ws.on('game_started', () => autoJoin(g.game_id, u));
+        ws.on('game_started', () => {
+          // Game has started — update status. Timer=0 effect handles autoJoin.
+          setGame((prev: any) => prev ? { ...prev, status: 'active' } : prev);
+          // Force timer to 0 to trigger autoJoin if countdown hasn't done so yet
+          setTimer(0);
+        });
         ws.on('initial_state', (d: any) => {
-          if (d.taken_cards)            setTaken(d.taken_cards);
-          if (d.game_state?.timer != null) setTimer(d.game_state.timer);
+          if (d.taken_cards) setTaken(d.taken_cards);
+          // If the game has already started, force timer to 0 to trigger autoJoin immediately
+          if (d.game_state?.status === 'active' || d.game_state?.status === 'finished') {
+            setTimer(0);
+          } else if (d.timer_remaining != null && d.timer_remaining > 0) {
+            setTimer(d.timer_remaining);
+          }
         });
         ws.on('next_game', (d: any) => {
           if (d.entry_fee === stake) {
@@ -209,19 +302,42 @@ function CardsInner() {
     };
   }, [stake]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Local countdown fallback ────────────────────────────────────────── */
+  /* ── Local countdown — ref-based so clearInterval never uses a stale ID ── */
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
-    if (loading || timer <= 0 || wsConnected) return;
-    const t = setTimeout(() => setTimer(p => Math.max(0, p - 1)), 1000);
-    return () => clearTimeout(t);
-  }, [timer, loading, wsConnected]);
+    if (loading) return;
+    // Clear any existing interval before starting a new one
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      setTimer(prev => {
+        if (prev <= 1) {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [loading]);
 
-  /* ── Auto-join on timer=0 ─────────────────────────────────────────────── */
+  /* ── Auto-join on timer=0 (fires even if still loading from a prior join attempt) */
+  const gameRef = useRef<any>(null);
+  const userRef = useRef<any>(null);
+  gameRef.current = game;
+  userRef.current = user;
   useEffect(() => {
-    if (timer === 0 && game && user && !loading) {
+    if (timer === 0 && game && user) {
       autoJoin(game.game_id, user);
     }
-  }, [timer, game, user, loading, autoJoin]);
+  }, [timer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Card click ───────────────────────────────────────────────────────── */
   const handleCardClick = (n: number) => {
@@ -351,38 +467,15 @@ function CardsInner() {
               const isSelected  = n === selected;
 
               return (
-                <button
+                <BingoCardButton
                   key={n}
-                  disabled={isTaken || timer === 0}
-                  onClick={() => handleCardClick(n)}
-                  style={{
-                    background: isSelected
-                      ? '#22c55e'
-                      : isMyCard
-                      ? '#16a34a'
-                      : isTaken
-                      ? '#ea580c'
-                      : 'rgba(71,85,105,0.5)',
-                    border: isSelected
-                      ? '2px solid #22c55e'
-                      : isMyCard
-                      ? '2px solid #16a34a'
-                      : isTaken
-                      ? '2px solid #ea580c'
-                      : '1.5px solid rgba(100,116,139,0.4)',
-                    color: '#fff',
-                    borderRadius: '10px',
-                    aspectRatio: '1',
-                    fontSize: '13px',
-                    fontWeight: '700',
-                    cursor: isTaken ? 'not-allowed' : 'pointer',
-                    transition: 'background 0.1s, transform 0.1s',
-                    transform: isSelected ? 'scale(1.08)' : 'scale(1)',
-                    opacity: isTaken ? 0.6 : 1,
-                  }}
-                >
-                  {n}
-                </button>
+                  n={n}
+                  isTaken={isTaken}
+                  isMyCard={isMyCard}
+                  isSelected={isSelected}
+                  isDisabled={isTaken || timer === 0}
+                  onClick={handleCardClick}
+                />
               );
             })}
           </div>

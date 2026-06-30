@@ -81,7 +81,32 @@ async def get_current_user(
 # ─── Leaderboard ──────────────────────────────────────────────────────────────
 @router.get("/leaderboard")
 async def get_leaderboard(limit: int = 10, db: AsyncSession = Depends(get_db)):
-    """Top players by wins."""
+    """Top players by wins using Redis."""
+    from ..redis_client import redis_client
+    
+    redis_leaders = await redis_client.get_leaderboard(limit)
+    
+    if redis_leaders:
+        user_ids = [int(item[0]) for item in redis_leaders]
+        if user_ids:
+            result = await db.execute(select(User).where(User.id.in_(user_ids)))
+            users_map = {u.id: u for u in result.scalars().all()}
+            
+            response = []
+            for idx, (user_id_str, score) in enumerate(redis_leaders):
+                u_id = int(user_id_str)
+                u = users_map.get(u_id)
+                if u:
+                    response.append({
+                        "rank": idx + 1,
+                        "user_id": u.id,
+                        "username": u.username or u.first_name or f"Player{u.id}",
+                        "total_wins": int(score),
+                        "total_earnings": u.balance,
+                    })
+            return response
+
+    # Fallback to DB
     result = await db.execute(
         select(User)
         .order_by(desc(User.wins), desc(User.balance))

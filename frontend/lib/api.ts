@@ -98,7 +98,7 @@ class ApiClient {
    * Lightweight health probe — used to detect when Render has woken up.
    * Returns true if the server is reachable, false otherwise (never throws).
    */
-  async ping(): Promise<boolean> {
+  ping = async (): Promise<boolean> => {
     try {
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), 5000);
@@ -115,10 +115,10 @@ class ApiClient {
    * Polls /ping every 3 seconds for up to 60 seconds.
    * Calls onWaiting(seconds) each poll so the UI can show a countdown.
    */
-  async waitForBackend(
+  waitForBackend = async (
     onWaiting?: (secondsElapsed: number) => void,
     timeoutMs = 60_000,
-  ): Promise<boolean> {
+  ): Promise<boolean> => {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const ok = await this.ping();

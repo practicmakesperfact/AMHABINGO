@@ -5,7 +5,7 @@ If Redis is unavailable the game still works perfectly using in-memory dicts.
 
 import json
 import asyncio
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from .config import get_settings
 
 settings = get_settings()
@@ -36,7 +36,7 @@ class RedisClient:
             await self.redis.ping()
             self.pubsub = self.redis.pubsub()
             self._available = True
-            print("✅ Redis connected")
+            print("Redis connected")
         except Exception as e:
             self._available = False
             self.redis = None
@@ -131,24 +131,33 @@ class RedisClient:
     # ── Timer ─────────────────────────────────────────────────────────────────
     async def set_timer(self, game_id: str, seconds: int):
         key = f"game:{game_id}:timer"
+        import time
+        ends_at = time.time() + seconds
         if self._available:
             try:
-                await self.redis.setex(key, seconds + 30, str(seconds))
+                await self.redis.setex(key, seconds + 30, str(ends_at))
                 return
             except Exception:
                 pass
-        _mem[key] = seconds
+        _mem[key] = ends_at
 
     async def get_timer(self, game_id: str) -> Optional[int]:
         key = f"game:{game_id}:timer"
+        import time
         if self._available:
             try:
                 val = await self.redis.get(key)
-                return int(val) if val else None
+                if val:
+                    remaining = int(float(val) - time.time())
+                    return max(0, remaining)
+                return None
             except Exception:
                 pass
         val = _mem.get(key)
-        return int(val) if val is not None else None
+        if val is not None:
+            remaining = int(float(val) - time.time())
+            return max(0, remaining)
+        return None
 
     async def decrement_timer(self, game_id: str) -> int:
         key = f"game:{game_id}:timer"
@@ -192,6 +201,32 @@ class RedisClient:
                 pass
         _lists.pop(key, None)
 
+    # ── Remaining Numbers ─────────────────────────────────────────────────────
+    async def init_remaining_numbers(self, game_id: str, numbers: List[int]):
+        key = f"game:{game_id}:remaining"
+        if self._available:
+            try:
+                await self.redis.delete(key)
+                if numbers:
+                    await self.redis.rpush(key, *[str(n) for n in numbers])
+                return
+            except Exception:
+                pass
+        _lists[key] = [str(n) for n in numbers]
+
+    async def pop_remaining_number(self, game_id: str) -> Optional[int]:
+        key = f"game:{game_id}:remaining"
+        if self._available:
+            try:
+                num = await self.redis.rpop(key)
+                return int(num) if num else None
+            except Exception:
+                pass
+        lst = _lists.get(key)
+        if lst:
+            return int(lst.pop())
+        return None
+
     # ── Active Games ──────────────────────────────────────────────────────────
     async def add_active_game(self, game_id: str):
         if self._available:
@@ -220,6 +255,29 @@ class RedisClient:
                 pass
         return list(_sets.get("active_games", set()))
 
+    # ── Leaderboard ───────────────────────────────────────────────────────────
+    async def increment_leaderboard(self, user_id: int):
+        if self._available:
+            try:
+                await self.redis.zincrby("leaderboard", 1, str(user_id))
+                return
+            except Exception:
+                pass
+        val = _mem.get("leaderboard", {})
+        val[str(user_id)] = val.get(str(user_id), 0) + 1
+        _mem["leaderboard"] = val
+
+    async def get_leaderboard(self, limit: int = 10) -> List[Tuple[str, float]]:
+        if self._available:
+            try:
+                # Returns list of (user_id, score) tuples
+                return await self.redis.zrevrange("leaderboard", 0, limit - 1, withscores=True)
+            except Exception:
+                pass
+        val = _mem.get("leaderboard", {})
+        sorted_val = sorted(val.items(), key=lambda item: item[1], reverse=True)
+        return sorted_val[:limit]
+
     # ── Pub/Sub (best-effort) ─────────────────────────────────────────────────
     async def publish(self, channel: str, message: Dict[str, Any]):
         if self._available:
@@ -242,6 +300,15 @@ class RedisClient:
             except Exception:
                 pass
         return None
+
+    async def listen_messages(self):
+        if self._available and self.pubsub:
+            try:
+                async for message in self.pubsub.listen():
+                    if message['type'] == 'message':
+                        yield message
+            except Exception:
+                pass
 
     # ── User Session ──────────────────────────────────────────────────────────
     async def set_user_session(self, user_id: int, data: Dict[str, Any], ttl: int = 86400):

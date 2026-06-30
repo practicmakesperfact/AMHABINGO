@@ -240,3 +240,16 @@ Also explain:
 - how to run backend
 - how to run frontend
 - how to connect Telegram Mini App
+
+
+<!-- use this 10 points for all prooject -->
+1.Move all active game state entirely into Redis; use PostgreSQL only for durable records.
+2.Broadcast only incremental WebSocket events (never the full game state).
+3.Virtualize the 600-card grid on the frontend and memoize individual card components.
+4.Let clients run countdown timers locally after receiving a synchronized start time.
+5.Store card ownership in Redis Sets or Hashes for constant-time availability checks.
+6.Use Redis Sorted Sets for the leaderboard.
+7.Use optimistic UI updates for card selection while confirming through the server.
+8.Scale FastAPI horizontally behind a load balancer, with Redis Pub/Sub synchronizing all instances.
+9.Add background workers (e.g., Celery or Dramatiq with Redis) for non-real-time tasks such as payment verification, notifications, and game cleanup.
+10.Add monitoring (Prometheus/Grafana or similar) and stress-test the system with tools like Locust or k6 before production.

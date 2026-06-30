@@ -19,6 +19,7 @@ from .database import AsyncSessionLocal
 from .game_engine import GameManager, BingoGameEngine
 from .websocket import (
     broadcast_timer_update,
+    broadcast_countdown_started,
     broadcast_game_started,
     broadcast_number_called,
     broadcast_player_won,
@@ -56,7 +57,7 @@ class GameLoopManager:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print(f"❌ Game loop error [{game_id}]: {e}")
+            print(f"Game loop error [{game_id}]: {e}")
             import traceback
             traceback.print_exc()
         finally:
@@ -78,23 +79,47 @@ class GameLoopManager:
             game.status = GameStatus.COUNTDOWN
             await db.commit()
 
+            # Update Redis state
+            try:
+                await redis_client.set_game_state(game_id, {
+                    "status": GameStatus.COUNTDOWN.value,
+                    "players": game.total_players,
+                    "called_numbers": [],
+                    "current_number": None
+                })
+            except Exception:
+                pass
+
+        import time
+        starts_at = time.time() + seconds
+
         try:
             await redis_client.set_timer(game_id, seconds)
         except Exception:
             pass
 
-        for remaining in range(seconds, -1, -1):
+        # Broadcast the start time once so late-joining clients can sync
+        await broadcast_countdown_started(game_id, seconds, starts_at)
+
+        # Tick every second so the frontend timer counts down correctly
+        for remaining in range(seconds, 0, -1):
+            await broadcast_timer_update(game_id, remaining)
             try:
                 await redis_client.set_timer(game_id, remaining)
             except Exception:
                 pass
-            await broadcast_timer_update(game_id, remaining)
             await asyncio.sleep(1)
+
+        # Broadcast 0 explicitly so clients know the countdown has ended
+        await broadcast_timer_update(game_id, 0)
 
     # ── Main game loop ────────────────────────────────────────────────────────
     async def _game_loop(self, game_id: str):
-        # Short delay after countdown to allow last-second joins
-        await asyncio.sleep(3)
+        # Grace period: give players time to join after countdown ends.
+        # The autoJoin HTTP request is triggered by timer_update(0) and
+        # may arrive up to several seconds AFTER the countdown ends.
+        # We wait here BEFORE opening the DB session so the join can commit.
+        await asyncio.sleep(8)
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Game).where(Game.game_id == game_id))
@@ -102,20 +127,34 @@ class GameLoopManager:
             if not game:
                 return
 
-            # No players — skip immediately
+            # Re-read total_players from DB after the grace period — the join
+            # commits to the DB, so we need the freshest value here.
+            await db.refresh(game)
+
+            # No players — finish quietly, do NOT auto-create next game.
+            # A new game will be created on-demand when a player selects this stake.
             if game.total_players == 0:
                 game.status = GameStatus.FINISHED
                 await db.commit()
-                print(f"⚠️  Game {game_id} (stake={game.entry_fee}) has no players — finishing")
-                await asyncio.sleep(3)
-                await self._create_next_game(game_id)
+                print(f"Game {game_id} (stake={game.entry_fee}) has no players after grace period - finishing (no next game)")
                 return
 
             # Mark ACTIVE
-            print(f"🎮 Starting game {game_id} (stake={game.entry_fee}) with {game.total_players} players")
+            print(f"Starting game {game_id} (stake={game.entry_fee}) with {game.total_players} players")
             game.status = GameStatus.ACTIVE
             game.started_at = datetime.utcnow()
             await db.commit()
+
+            # Update Redis
+            try:
+                await redis_client.set_game_state(game_id, {
+                    "status": GameStatus.ACTIVE.value,
+                    "players": game.total_players,
+                    "started_at": game.started_at.isoformat()
+                })
+            except Exception:
+                pass
+
             await broadcast_game_started(game_id)
 
             game_manager = GameManager(db)
@@ -152,11 +191,9 @@ class GameLoopManager:
                 # Broadcast to frontend — clients mark their own cards
                 await broadcast_number_called(game_id, number, letter)
 
-                # Check for winners using called_numbers already in DB
-                # (re-marks server-side only for winner validation)
                 winners = await self._check_winners_fast(game_id, db)
                 if winners:
-                    print(f"🎉 BINGO! Game {game_id} has {len(winners)} winner(s)")
+                    print(f"BINGO! Game {game_id} has {len(winners)} winner(s)")
 
                     # Mark game finished immediately
                     await db.refresh(game)
@@ -182,14 +219,14 @@ class GameLoopManager:
                         })
 
                     await broadcast_player_won(game_id, winner_data)
-                    print(f"✅ Game {game_id} finished — winner announced")
+                    print(f"Game {game_id} finished - winner announced")
                     break
 
                 # Wait before calling next number
                 await asyncio.sleep(settings.GAME_INTERVAL_SECONDS)
 
-        # Give players time to see winner screen before next game starts
-        await asyncio.sleep(10)
+        # Give players time to see winner screen before next game starts (synchronized with frontend 5s timer)
+        await asyncio.sleep(4)
         await self._create_next_game(game_id)
 
     # ── Fast winner check (no per-number DB writes) ───────────────────────────
@@ -201,13 +238,14 @@ class GameLoopManager:
         """
         from sqlalchemy.orm.attributes import flag_modified
 
-        # Refresh game to get latest called_numbers
+        # Get called numbers from Redis (no DB write per number)
         result = await db.execute(select(Game).where(Game.game_id == game_id))
         game = result.scalar_one_or_none()
         if not game:
             return []
 
-        called = set(game.called_numbers or [])
+        called_list = await redis_client.get_called_numbers(game_id)
+        called = set(called_list)
 
         # Get players who haven't won yet
         players_result = await db.execute(
@@ -238,7 +276,7 @@ class GameLoopManager:
                 player.marked_numbers = marked   # persist final state for winner
                 flag_modified(player, "marked_numbers")
                 winners.append(player)
-                print(f"🎉 Player {player.user_id} won with pattern: {pattern}")
+                print(f"Player {player.user_id} won with pattern: {pattern}")
 
         if winners:
             await db.commit()
@@ -256,7 +294,7 @@ class GameLoopManager:
 
                 gm = GameManager(db)
                 new_game = await gm.create_game(old.room, old.entry_fee)
-                print(f"✅ Next game created: {new_game.game_id} (stake={old.entry_fee})")
+                print(f"Next game created: {new_game.game_id} (stake={old.entry_fee})")
 
                 # Notify all clients still connected to the old game room
                 await ws_manager.broadcast_to_game(
@@ -271,7 +309,7 @@ class GameLoopManager:
                 await self.start_countdown_loop(new_game.game_id)
 
         except Exception as e:
-            print(f"❌ Failed to create next game after {old_game_id}: {e}")
+            print(f"Failed to create next game after {old_game_id}: {e}")
 
 
 # Singleton

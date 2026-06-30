@@ -5,6 +5,7 @@ export type WSMessageType =
   | 'card_selected'
   | 'card_available'
   | 'timer_update'
+  | 'countdown_started'
   | 'game_started'
   | 'game_state_update'
   | 'number_called'
