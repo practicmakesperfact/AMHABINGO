@@ -158,6 +158,42 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     }
 
 
+# ─── Test Deposit (DEV ONLY — remove before production launch!) ───────────────
+@router.post("/test-deposit")
+async def test_deposit(
+    amount: float = 1000.0,
+    init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Add test balance to a user account.
+    ⚠️  FOR TESTING ONLY — remove or protect with admin auth before going live!
+    Works with both Telegram users and demo user (no init_data).
+    """
+    if init_data:
+        user_data = extract_user_from_init_data(init_data)
+        if not user_data:
+            raise HTTPException(status_code=401, detail="Invalid Telegram data")
+        user_result = await db.execute(select(User).where(User.telegram_id == user_data["id"]))
+    else:
+        user_result = await db.execute(select(User).where(User.telegram_id == 123456789))
+
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found. Please authenticate first.")
+
+    user.balance += amount
+    await db.commit()
+    await db.refresh(user)
+    return {
+        "message": f"✅ Added {amount} ETB to balance",
+        "new_balance": user.balance,
+        "play_balance": user.play_balance,
+        "user_id": user.id,
+        "telegram_id": user.telegram_id,
+    }
+
+
 # ─── User Game History ────────────────────────────────────────────────────────
 @router.get("/history")
 async def get_user_history(

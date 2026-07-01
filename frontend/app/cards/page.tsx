@@ -453,8 +453,13 @@ function CardsInner() {
           💰 Derash: {derash} ETB
         </span>
         <span className="text-white/40 text-xs">
-          🃏 {Object.keys(taken).length}/600 taken
+          🃏 {Object.keys(taken).length}/600 joined
         </span>
+        {selected && (
+          <span className="text-green-400 text-xs font-bold">
+            ✅ #{selected} selected
+          </span>
+        )}
       </div>
 
       {/* ── 600-card grid ──────────────────────────────────────────────── */}
