@@ -129,12 +129,12 @@ app.include_router(payment.router)
 
 # ── Health & Keep-alive endpoints ─────────────────────────────────────────────
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {"status": "ok", "message": "AMHABINGO API is running", "version": "1.0.0"}
 
 
-@app.get("/ping")
+@app.api_route("/ping", methods=["GET", "HEAD"])
 async def ping():
     """
     Ultra-lightweight keep-alive endpoint.
