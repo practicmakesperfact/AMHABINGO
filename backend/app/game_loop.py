@@ -131,12 +131,13 @@ class GameLoopManager:
             # commits to the DB, so we need the freshest value here.
             await db.refresh(game)
 
-            # No players — finish quietly, do NOT auto-create next game.
-            # A new game will be created on-demand when a player selects this stake.
+            # No players — finish quietly, then create next game so waiting
+            # clients automatically redirect to the fresh lobby.
             if game.total_players == 0:
                 game.status = GameStatus.FINISHED
                 await db.commit()
-                print(f"Game {game_id} (stake={game.entry_fee}) has no players after grace period - finishing (no next game)")
+                print(f"Game {game_id} (stake={game.entry_fee}) has no players after grace period - finishing, creating next game")
+                await self._create_next_game(game_id)
                 return
 
             # Mark ACTIVE
