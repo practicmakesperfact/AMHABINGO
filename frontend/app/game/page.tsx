@@ -265,7 +265,7 @@ function GameInner() {
           // If game already finished, redirect to card selection for next round
           if (d.game_state?.status === 'finished') {
             console.log('Game already finished, redirecting...');
-            const stake = g?.entry_fee ?? 10;
+            const stake = (g as any)?.entry_fee ?? 10;
             router.push(`/cards?stake=${stake}`);
             return;
           }

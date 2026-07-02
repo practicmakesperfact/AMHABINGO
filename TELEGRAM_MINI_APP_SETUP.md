@@ -157,7 +157,6 @@ DATABASE_URL=postgresql://user:pass@host/dbname
 REDIS_URL=redis://host:6379
 BOT_TOKEN=your_bot_token_here
 TELEGRAM_BOT_SECRET=your_secret_here
-CHAPA_SECRET_KEY=your_chapa_key
 FRONTEND_URL=https://amhabingo.vercel.app
 ```
 
@@ -307,10 +306,6 @@ REDIS_URL=redis://localhost:6379
 BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
 TELEGRAM_BOT_SECRET=your_webhook_secret_here
 
-# Payment (Chapa)
-CHAPA_SECRET_KEY=CHASECK_TEST-your_test_key
-CHAPA_WEBHOOK_SECRET=your_webhook_secret
-
 # App Config
 SECRET_KEY=change-this-to-random-string-in-production
 COMMISSION_PERCENT=20.0
@@ -374,7 +369,7 @@ Start playing now! 🚀
 ```
 /setdescription
 
-Play Ethiopian Bingo online. Win real money prizes. Fast games, fair play, instant withdrawals via Chapa.
+Play Ethiopian Bingo online. Win real money prizes. Fast games, fair play, instant withdrawals.
 ```
 
 ---
@@ -434,29 +429,7 @@ After deployment:
 
 ---
 
-## 💳 PAYMENT INTEGRATION (Chapa)
 
-### Setup Chapa
-
-1. **Sign up at https://chapa.co/**
-
-2. **Get API keys:**
-   - Test Key: `CHASECK_TEST-xxx`
-   - Live Key: `CHASECK_xxx`
-
-3. **Configure webhook:**
-```
-URL: https://your-backend.railway.app/api/payments/webhook
-Events: payment.success, payment.failed
-```
-
-4. **Update backend config:**
-```env
-CHAPA_SECRET_KEY=CHASECK_xxx
-CHAPA_WEBHOOK_SECRET=your_webhook_secret
-```
-
----
 
 ## 📊 MONITORING
 
@@ -522,7 +495,7 @@ logging.basicConfig(
 - [ ] Bot commands configured
 - [ ] Bot profile picture uploaded
 - [ ] About text and description set
-- [ ] Payment gateway configured (Chapa)
+- [ ] Informal payment flow verified
 - [ ] Tested on Android
 - [ ] Tested on iOS
 - [ ] Tested on Desktop
@@ -559,7 +532,6 @@ Share: https://t.me/amhabingo_bot
 - **Telegram API Docs:** https://core.telegram.org/bots/webapps
 - **Vercel Docs:** https://vercel.com/docs
 - **Railway Docs:** https://docs.railway.app/
-- **Chapa Docs:** https://developer.chapa.co/
 
 ---
 

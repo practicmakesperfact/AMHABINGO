@@ -132,16 +132,10 @@ Use Redis Pub/Sub for broadcasting updates
 
 ---
 
-9. PAYMENT INTEGRATION (Chapa)
+9. PAYMENT INTEGRATION (Telegram Bot)
 
-- Create payment when user joins
-- Generate payment link
-- Verify payment before joining game
-- Use:
-  https://api.chapa.co/v1/transaction/initialize
-  https://api.chapa.co/v1/transaction/verify/{tx_ref}
-
-- Support Telebirr and bank payments
+- All payments (deposits / withdrawals) are handled informally via the Telegram Bot (Telebirr)
+- Support transaction history tracking
 
 ---
 
@@ -191,7 +185,6 @@ Use:
 14. SECURITY
 
 - Validate Telegram initData
-- Verify all payments server-side
 - Prevent duplicate card selection
 - Prevent cheating
 
@@ -204,7 +197,7 @@ Use:
   websocket.py
   game_engine.py
   models.py
-  payment.py
+
   redis_client.py
 
 /frontend
@@ -233,7 +226,7 @@ OUTPUT REQUIREMENTS:
 - Full frontend (Next.js)
 - WebSocket implementation
 - Redis integration
-- Chapa payment integration
+- Telegram bot payment confirmation (informal)
 - Clean, commented, production-ready code
 
 Also explain:
@@ -251,5 +244,5 @@ Also explain:
 6.Use Redis Sorted Sets for the leaderboard.
 7.Use optimistic UI updates for card selection while confirming through the server.
 8.Scale FastAPI horizontally behind a load balancer, with Redis Pub/Sub synchronizing all instances.
-9.Add background workers (e.g., Celery or Dramatiq with Redis) for non-real-time tasks such as payment verification, notifications, and game cleanup.
+9. Add background workers (e.g., Celery or Dramatiq with Redis) for non-real-time tasks such as transaction logging, notifications, and game cleanup.
 10.Add monitoring (Prometheus/Grafana or similar) and stress-test the system with tools like Locust or k6 before production.

@@ -35,7 +35,6 @@ This guide covers deploying AMHABINGO to production using modern cloud platforms
 - Render account (backend)
 - Neon account (PostgreSQL database)
 - Upstash account (Redis)
-- Chapa account (payment)
 - Telegram Bot Token
 
 ---
@@ -144,10 +143,6 @@ services:
         sync: false
       - key: TELEGRAM_BOT_SECRET
         sync: false
-      - key: CHAPA_SECRET_KEY
-        sync: false
-      - key: CHAPA_WEBHOOK_SECRET
-        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: FRONTEND_URL
@@ -184,9 +179,6 @@ DATABASE_URL=postgresql+asyncpg://[user]:[password]@[endpoint].neon.tech/[dbname
 # Redis (from Upstash)
 REDIS_URL=redis://default:[PASSWORD]@[REGION].upstash.io:6379
 
-# Chapa Payment
-CHAPA_SECRET_KEY=your_chapa_secret_key
-CHAPA_WEBHOOK_SECRET=your_webhook_secret
 
 # Telegram
 BOT_TOKEN=your_bot_token
@@ -304,36 +296,13 @@ help - Get help
 
 ---
 
-## Step 6: Payment Setup (Chapa)
+## Step 6: Domain Setup (Optional)
 
-### 6.1 Create Account
-1. Go to https://chapa.co
-2. Sign up for business account
-3. Complete KYC verification
-
-### 6.2 Get API Keys
-1. Go to Dashboard → Settings → API Keys
-2. Copy "Secret Key"
-3. Add to Railway environment variables
-
-### 6.3 Set Webhook
-1. Go to Dashboard → Settings → Webhooks
-2. Add webhook URL:
-   ```
-   https://amhabingo-production.up.railway.app/api/payments/webhook
-   ```
-3. Copy webhook secret
-4. Add to Railway environment variables
-
----
-
-## Step 7: Domain Setup (Optional)
-
-### 7.1 Buy Domain
+### 6.1 Buy Domain
 - Namecheap, GoDaddy, etc.
 - Example: `amhabingo.com`
 
-### 7.2 Configure DNS
+### 6.2 Configure DNS
 **For Frontend (Vercel):**
 1. Go to Vercel → Project → Settings → Domains
 2. Add custom domain
@@ -349,28 +318,28 @@ help - Get help
    Value: [your-service].onrender.com
    ```
 
-### 7.3 Update URLs
+### 6.3 Update URLs
 Update all environment variables with new domains:
 - Frontend: `https://amhabingo.com`
 - Backend: `https://api.amhabingo.com`
 
 ---
 
-## Step 8: SSL/HTTPS
+## Step 7: SSL/HTTPS
 
-### 8.1 Vercel
+### 7.1 Vercel
 - Automatic SSL (Let's Encrypt)
 - No configuration needed
 
-### 8.2 Render
+### 7.2 Render
 - Automatic SSL (Let's Encrypt)
 - No configuration needed
 
 ---
 
-## Step 9: Monitoring & Logging
+## Step 8: Monitoring & Logging
 
-### 9.1 Render Logs
+### 8.1 Render Logs
 1. Go to Render Dashboard
 2. Select your service
 3. Click "Logs" tab (real-time logs)
@@ -383,12 +352,12 @@ Update all environment variables with new domains:
 render logs
 ```
 
-### 9.2 Vercel Logs
+### 8.2 Vercel Logs
 1. Go to Vercel Dashboard
 2. Select project
 3. Click "Logs" tab
 
-### 9.3 Error Tracking (Optional)
+### 8.3 Error Tracking (Optional)
 **Sentry:**
 ```bash
 # Install
@@ -400,19 +369,19 @@ npm install @sentry/nextjs @sentry/python
 
 ---
 
-## Step 10: Testing Production
+## Step 9: Testing Production
 
-### 10.1 Health Check
+### 9.1 Health Check
 ```bash
 curl https://api.amhabingo.com/health
 ```
 
-### 10.2 Frontend Check
+### 9.2 Frontend Check
 1. Open https://amhabingo.com
 2. Test all features
 3. Check browser console for errors
 
-### 10.3 Telegram Check
+### 9.3 Telegram Check
 1. Open bot in Telegram
 2. Click "Play Bingo"
 3. Test complete flow
@@ -558,10 +527,6 @@ psql "postgresql://..." < backup.sql
 - Check Render logs for connection errors
 - Render supports WebSockets on all plans
 
-**Issue: Payment failing**
-- Verify Chapa API key
-- Check webhook URL
-- Test in sandbox mode first
 
 **Issue: Database connection errors**
 - Check connection string format (must include `?sslmode=require`)
@@ -578,7 +543,7 @@ psql "postgresql://..." < backup.sql
 - [ ] Database migrated
 - [ ] Redis connected
 - [ ] Telegram bot configured
-- [ ] Payment integration tested
+- [ ] Informal payment via Telegram bot tested
 - [ ] SSL certificates active
 - [ ] Monitoring setup
 - [ ] Backups configured

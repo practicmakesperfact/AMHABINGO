@@ -21,9 +21,10 @@ celery_app.conf.update(
 # Example tasks
 @celery_app.task
 def verify_pending_payments():
-    """Background task to verify pending payments with Chapa."""
-    print("Verifying pending payments...")
-    # In a real app, this would query pending transactions and call Chapa API
+    """Background task to check pending deposit confirmations."""
+    print("Checking pending payments...")
+    # Payments are handled by the Telegram bot (Telebirr confirmation messages).
+    # This task is a placeholder for any future background verification needs.
     pass
 
 @celery_app.task

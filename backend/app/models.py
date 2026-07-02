@@ -105,7 +105,7 @@ class Transaction(Base):
     tx_ref = Column(String, unique=True, nullable=False, index=True)
     status = Column(SQLEnum(TransactionStatus), default=TransactionStatus.PENDING)
     type = Column(SQLEnum(TransactionType), nullable=False)
-    payment_method = Column(String, nullable=True)  # chapa, telebirr, etc
+    payment_method = Column(String, nullable=True)  # telebirr (via bot)
     extra_data = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

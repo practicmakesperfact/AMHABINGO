@@ -114,17 +114,6 @@ class PlayerWonMessage(BaseModel):
     winning_pattern: str
     prize_amount: float
 
-# Payment Schemas
-class PaymentInitRequest(BaseModel):
-    game_id: str
-    card_number: int
-
-class PaymentInitResponse(BaseModel):
-    checkout_url: str
-    tx_ref: str
-
-class PaymentVerifyRequest(BaseModel):
-    tx_ref: str
 
 # Leaderboard Schema
 class LeaderboardEntry(BaseModel):

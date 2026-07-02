@@ -24,9 +24,6 @@ REDIS_URL=redis://localhost:6379
 BOT_TOKEN=test_bot_token
 TELEGRAM_BOT_SECRET=test_secret
 
-# Chapa Payment (use test key)
-CHAPA_SECRET_KEY=CHASECK_TEST-test_key
-CHAPA_WEBHOOK_SECRET=test_webhook_secret
 
 # App Settings
 SECRET_KEY=your-super-secret-key-change-this

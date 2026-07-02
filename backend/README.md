@@ -8,7 +8,7 @@ FastAPI backend for AMHABINGO - Real-time Telegram Bingo Game
 - ✅ PostgreSQL database with SQLAlchemy
 - ✅ Redis for real-time state management
 - ✅ WebSocket support for live updates
-- ✅ Chapa payment integration
+- ✅ Telegram bot payment confirmation (informal)
 - ✅ Telegram Web App authentication
 - ✅ Game engine with win detection
 - ✅ Multi-winner support
@@ -62,10 +62,6 @@ REDIS_URL=redis://localhost:6379
 BOT_TOKEN=your_bot_token_here
 TELEGRAM_BOT_SECRET=your_bot_secret
 
-# Chapa
-CHAPA_SECRET_KEY=CHASECK_TEST-your_key
-CHAPA_WEBHOOK_SECRET=your_webhook_secret
-
 # App
 SECRET_KEY=your-secret-key-change-in-production
 COMMISSION_PERCENT=10
@@ -108,9 +104,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 - `WS /api/games/ws/{game_id}` - WebSocket connection
 
 ### Payments
-- `POST /api/payments/initialize` - Initialize payment
-- `POST /api/payments/verify` - Verify payment
-- `GET /api/payments/transactions` - Get transaction history
+- `GET /api/payment/transactions` - Get transaction history
 
 ## WebSocket Events
 

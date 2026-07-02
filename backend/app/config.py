@@ -12,9 +12,7 @@ class Settings(BaseSettings):
     BOT_TOKEN: str = "test_bot_token"
     TELEGRAM_BOT_SECRET: str = "test_secret"
 
-    # Chapa
-    CHAPA_SECRET_KEY: str = "CHASECK_TEST-test_key"
-    CHAPA_WEBHOOK_SECRET: str = "test_webhook_secret"
+
 
     # App
     SECRET_KEY: str = "change-this-secret-key-in-production"

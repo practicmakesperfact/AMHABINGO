@@ -12,7 +12,7 @@ A complete, production-ready Telegram Mini App for playing Bingo with real-time 
 - ✅ **Auto-marking** - Numbers automatically marked on your card
 - ✅ **Multiple Win Patterns** - Rows, columns, diagonals, four-corner, blackout
 - ✅ **Multi-winner Support** - Prize split between multiple winners
-- ✅ **Payment Integration** - Chapa API for secure payments
+- ✅ **Payment Integration** - Informal payments via Telegram Bot (Telebirr)
 - ✅ **Audio Announcements** - Voice calls for each number
 - ✅ **Leaderboard** - Track top players
 - ✅ **Responsive UI** - Beautiful design with Tailwind CSS
@@ -38,7 +38,6 @@ amhabingo/
 │   │   ├── redis_client.py
 │   │   ├── game_engine.py
 │   │   ├── websocket.py
-│   │   ├── payment.py
 │   │   ├── auth.py
 │   │   ├── game_loop.py
 │   │   └── routers/
@@ -87,7 +86,6 @@ amhabingo/
 - PostgreSQL
 - Redis
 - Telegram Bot Token
-- Chapa API Key
 
 ### Backend Setup
 
@@ -155,7 +153,6 @@ Each cartela has a standard 5×5 grid:
 DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/amhabingo
 REDIS_URL=redis://localhost:6379
 BOT_TOKEN=your_telegram_bot_token
-CHAPA_SECRET_KEY=CHASECK_TEST-your_key
 COMMISSION_PERCENT=10
 GAME_INTERVAL_SECONDS=4
 FRONTEND_URL=http://localhost:3000
@@ -181,15 +178,14 @@ Once the backend is running, visit:
 2. Authenticates via Telegram
 3. Selects stake amount
 4. Chooses card (1-600)
-5. Completes payment via Chapa
-6. Joins game room
-7. Countdown starts (60s)
-8. Game begins
-9. Numbers called every 4s
-10. Card auto-marks
-11. Win detected
-12. Prize distributed
-13. Next game starts
+5. Joins game room
+6. Countdown starts (60s)
+7. Game begins
+8. Numbers called every 4s
+9. Card auto-marks
+10. Win detected
+11. Prize distributed
+12. Next game starts
 ```
 
 ## 🏗️ Architecture
@@ -217,7 +213,6 @@ Once the backend is running, visit:
 ## 🔐 Security
 
 - ✅ Telegram Web App data verification
-- ✅ Server-side payment validation
 - ✅ Duplicate card prevention
 - ✅ Win validation
 - ✅ CORS protection
