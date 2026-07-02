@@ -120,7 +120,9 @@ function CardsInner() {
 
   /* ── Auto-join ────────────────────────────────────────────────────────── */
   const autoJoin = useCallback(async (gameId: string, u: any) => {
-    // Guard: prevent double-join from timer=0 AND game_started firing simultaneously
+    // Guard: prevent double-join — once set, NEVER reset on this page load.
+    // Multiple WS events (initial_state, game_started, timer=0) can all
+    // trigger this; the ref ensures only the first one runs.
     if (joiningRef.current) return;
     joiningRef.current = true;
 
@@ -130,7 +132,6 @@ function CardsInner() {
       if (!avail.length) {
         alert('No cards available — all 600 cartelas are taken!');
         router.push('/');
-        joiningRef.current = false;
         return;
       }
       card = avail[Math.floor(Math.random() * avail.length)];
@@ -152,12 +153,13 @@ function CardsInner() {
       
       router.push(`/game?game=${gameId}&card=${card}`);
     } catch (e: any) {
-      joiningRef.current = false;
+      // NOTE: Do NOT reset joiningRef.current here.
+      // Resetting it allows a second WS event to call autoJoin again,
+      // causing the double-alert bug.
       const msg = e.message || 'Unknown error';
       if (msg.includes('already finished')) {
-        // Game is done — go back to lobby
-        setLoading(false);
-        alert('This game has already finished. Waiting for the next game…');
+        // Game is done — refresh to find the newly created game
+        window.location.reload();
       } else if (msg.includes('already started')) {
         // Game just started — navigate to game page as spectator (no card)
         wsRef.current?.disconnect();
@@ -165,6 +167,8 @@ function CardsInner() {
         router.push(`/game?game=${gameId}`);
       } else {
         alert(`Failed to join: ${msg}`);
+        // Only reset here for genuinely retryable errors (e.g. insufficient balance)
+        joiningRef.current = false;
         setLoading(false);
       }
     }

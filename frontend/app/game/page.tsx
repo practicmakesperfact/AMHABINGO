@@ -229,15 +229,21 @@ function GameInner() {
         ws.on('timer_update', (d: any) => {
           setGame((prev: any) => prev ? { ...prev, _timer: d.seconds } : prev);
           // When timer hits 0 on game page, show grace period countdown (8s)
-          if (d.seconds === 0 && !currentNum) {
-            setGameStarting(true);
-            setStartingIn(8);
-            const t = setInterval(() => {
-              setStartingIn(prev => {
-                if (prev <= 1) { clearInterval(t); setGameStarting(false); return 0; }
-                return prev - 1;
-              });
-            }, 1000);
+          // Use functional check via setCurrentNum to avoid stale closure
+          if (d.seconds === 0) {
+            setCurrentNum(prev => {
+              if (!prev) {
+                setGameStarting(true);
+                setStartingIn(8);
+                const t = setInterval(() => {
+                  setStartingIn(p => {
+                    if (p <= 1) { clearInterval(t); setGameStarting(false); return 0; }
+                    return p - 1;
+                  });
+                }, 1000);
+              }
+              return prev;
+            });
           }
         });
 
@@ -256,10 +262,18 @@ function GameInner() {
         });
         
         ws.on('initial_state', (d: any) => {
-          // Restore called numbers from Redis via initial_state
+          // If game already finished, redirect to card selection for next round
+          if (d.game_state?.status === 'finished') {
+            console.log('Game already finished, redirecting...');
+            const stake = g?.entry_fee ?? 10;
+            router.push(`/cards?stake=${stake}`);
+            return;
+          }
+          // Restore game info from Redis
           if (d.game_state) {
             setGame((prev: any) => ({
               ...prev,
+              status: d.game_state.status ?? prev?.status,
               total_players: d.game_state.total_players ?? prev?.total_players,
               prize_pool: d.game_state.prize_pool ?? prev?.prize_pool,
             }));
@@ -286,6 +300,27 @@ function GameInner() {
       initRef.current = false;
     };
   }, [gameId]);
+
+  /* Stuck-game recovery: poll the game status every 15s.
+     If the game has finished but we never got the WS event
+     (e.g. Render cold start, WS dropped), redirect to next round. */
+  useEffect(() => {
+    if (!gameId || winner) return; // no need if we already have a winner
+    const interval = setInterval(async () => {
+      try {
+        const g = await api.getGame(gameId);
+        if (g && (g as any).status === 'finished') {
+          console.log('Stuck-game recovery: game is finished, redirecting...');
+          clearInterval(interval);
+          const stake = (g as any).entry_fee ?? game?.entry_fee ?? 10;
+          router.push(`/cards?stake=${stake}`);
+        }
+      } catch {
+        // Backend unreachable — skip this check
+      }
+    }, 15_000);
+    return () => clearInterval(interval);
+  }, [gameId, winner]);
 
   /* Render */
   if (loading) return (

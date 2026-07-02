@@ -1,4 +1,14 @@
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://127.0.0.1:8000';
+// Derive WS URL: explicit env var > auto-convert API URL > localhost fallback
+function getWsUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+  if (apiUrl) {
+    // Convert https://host → wss://host, http://host → ws://host
+    return apiUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+  }
+  return 'ws://127.0.0.1:8000';
+}
+const WS_URL = getWsUrl();
 
 export type WSMessageType =
   | 'initial_state'
