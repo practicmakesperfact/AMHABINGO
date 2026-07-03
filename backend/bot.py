@@ -3,22 +3,23 @@ import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
-from sqlalchemy import select
 import sys
 import os
 
-# Add the backend directory to path so we can import app modules
+# Add the backend directory to path so we can import modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.config import get_settings
-from app.database import AsyncSessionLocal
-from app.models import User
+from bot_api_client import BotAPIClient
 
 settings = get_settings()
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=settings.BOT_TOKEN)
 dp = Dispatcher()
+
+# Initialize API client (Bot → API → Database)
+api_client = BotAPIClient(settings.BACKEND_URL)
 
 CHANNEL = "@amhabingo"
 GROUP   = "@amhabingochat"
@@ -82,6 +83,10 @@ async def cmd_help(message: types.Message):
 # ── Contact → Register ────────────────────────────────────────────────────────
 @dp.message(F.contact)
 async def handle_contact(message: types.Message):
+    """
+    Register user via contact share.
+    NOW USES API instead of direct database access! ✅
+    """
     contact = message.contact
     if not contact:
         return
@@ -89,44 +94,19 @@ async def handle_contact(message: types.Message):
     telegram_id  = contact.user_id if contact.user_id else message.from_user.id
     phone_number = contact.phone_number
 
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.telegram_id == telegram_id))
-        user   = result.scalar_one_or_none()
+    try:
+        # Call FastAPI endpoint (Bot → API → Database)
+        user = await api_client.register_user(
+            telegram_id=telegram_id,
+            phone_number=phone_number,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name
+        )
 
-        if user:
-            if not user.phone_number:
-                user.phone_number = phone_number
-                await db.commit()
-                await message.answer(
-                    "✅ ስልክ ቁጥርዎ ተዘምኗል! ተመዝግበዋል።\n\n"
-                    "👉 *Play 🎮* ይጫኑ ጨዋታ ለመጀምር!",
-                    parse_mode="Markdown",
-                    reply_markup=get_main_menu_kb(),
-                )
-            else:
-                await message.answer(
-                    "✅ ቀደም ብለው ተመዝግበዋል!\n\n"
-                    f"💰 Main Wallet: *{user.balance:.2f} ETB*\n"
-                    f"🎮 Play Wallet: *{user.play_balance:.2f} ETB*\n\n"
-                    "👉 *Play 🎮* ይጫኑ ጨዋታ ለመጀምር!",
-                    parse_mode="Markdown",
-                    reply_markup=get_main_menu_kb(),
-                )
-        else:
-            # New user — give 10 ETB play bonus
-            user = User(
-                telegram_id  = telegram_id,
-                phone_number = phone_number,
-                username     = message.from_user.username,
-                first_name   = message.from_user.first_name,
-                last_name    = message.from_user.last_name,
-                balance      = 0.0,
-                play_balance = 10.0,   # FREE BONUS
-                coins        = 0,
-            )
-            db.add(user)
-            await db.commit()
-
+        # Check if this was a new registration or update
+        if user.get('play_balance', 0) == 10.0 and user.get('games_played', 0) == 0:
+            # New user
             await message.answer(
                 "🎉 ✅ Player registered successfully!\n\n"
                 "✨ አዲስ መረጃዎቸን እንዲደርሱት ቻናልችንን እና ግሩፓችንን ይቀላቀሉ።\n\n"
@@ -137,31 +117,58 @@ async def handle_contact(message: types.Message):
                 parse_mode="Markdown",
                 reply_markup=get_main_menu_kb(),
             )
+        else:
+            # Existing user
+            await message.answer(
+                "✅ ቀደም ብለው ተመዝግበዋል!\n\n"
+                f"💰 Main Wallet: *{user.get('balance', 0):.2f} ETB*\n"
+                f"🎮 Play Wallet: *{user.get('play_balance', 0):.2f} ETB*\n\n"
+                "👉 *Play 🎮* ይጫኑ ጨዋታ ለመጀምር!",
+                parse_mode="Markdown",
+                reply_markup=get_main_menu_kb(),
+            )
+
+    except Exception as e:
+        logging.error(f"Registration error: {e}")
+        await message.answer(
+            "❌ Registration failed. Please try again or contact support.",
+            reply_markup=get_main_menu_kb(),
+        )
 
 
 # ── Check Balance ─────────────────────────────────────────────────────────────
 @dp.message(F.text == "Check Balance 💵")
 async def check_balance(message: types.Message):
+    """
+    Check user balance via API.
+    NOW USES API instead of direct database access! ✅
+    """
     telegram_id = message.from_user.id
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.telegram_id == telegram_id))
-        user   = result.scalar_one_or_none()
-
-    if not user:
+    
+    try:
+        # Call FastAPI endpoint (Bot → API → Database)
+        balance_data = await api_client.get_user_balance(telegram_id)
+        
         await message.answer(
-            "❌ ተመዝግበው አልቀረቡም። *Register 📋* ይጫኑ ።",
+            f"💰 *የሒሳብ ቀሪ*\n\n"
+            f"🏦 Main Wallet: *{balance_data['balance']:.2f} ETB*\n"
+            f"🎮 Play Wallet: *{balance_data['play_balance']:.2f} ETB*\n"
+            f"🪙 Coins: *{balance_data['coins']}*\n"
+            f"💵 Total: *{balance_data['total']:.2f} ETB*",
             parse_mode="Markdown",
         )
-        return
-
-    await message.answer(
-        f"💰 *የሒሳብ ቀሪ*\n\n"
-        f"🏦 Main Wallet: *{user.balance:.2f} ETB*\n"
-        f"🎮 Play Wallet: *{user.play_balance:.2f} ETB*\n"
-        f"🪙 Coins: *{user.coins}*\n"
-        f"🏆 Wins: *{user.wins}*",
-        parse_mode="Markdown",
-    )
+    
+    except Exception as e:
+        if "404" in str(e):
+            await message.answer(
+                "❌ ተመዝግበው አልቀረቡም። *Register 📋* ይጫኑ ።",
+                parse_mode="Markdown",
+            )
+        else:
+            logging.error(f"Balance check error: {e}")
+            await message.answer(
+                "❌ Could not fetch balance. Please try again.",
+            )
 
 
 # ── Deposit ───────────────────────────────────────────────────────────────────
@@ -180,34 +187,45 @@ async def handle_deposit(message: types.Message):
 # ── Withdraw ──────────────────────────────────────────────────────────────────
 @dp.message(F.text == "Withdraw 🤑")
 async def handle_withdraw(message: types.Message):
+    """
+    Withdraw handler - checks balance via API.
+    NOW USES API instead of direct database access! ✅
+    """
     telegram_id = message.from_user.id
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.telegram_id == telegram_id))
-        user   = result.scalar_one_or_none()
+    
+    try:
+        # Call FastAPI endpoint (Bot → API → Database)
+        balance_data = await api_client.get_user_balance(telegram_id)
+        
+        if balance_data['balance'] < 50:
+            await message.answer(
+                f"❌ *Withdraw አይቻልም!*\n\n"
+                f"ቀሪ ሒሳብ: *{balance_data['balance']:.2f} ETB*\n"
+                f"ዝቅተኛ withdraw: *50 ETB*\n\n"
+                "🎮 ጨዋታ ይጫወቱ balance ይጨምሩ!",
+                parse_mode="Markdown",
+            )
+            return
 
-    if not user:
-        await message.answer("❌ ተመዝግበው አልቀረቡም። *Register 📋* ይጫኑ።", parse_mode="Markdown")
-        return
-
-    if user.balance < 50:
         await message.answer(
-            f"❌ *Withdraw አይቻልም!*\n\n"
-            f"ቀሪ ሒሳብ: *{user.balance:.2f} ETB*\n"
-            f"ዝቅተኛ withdraw: *50 ETB*\n\n"
-            "🎮 ጨዋታ ይጫወቱ balance ይጨምሩ!",
+            f"🤑 *Withdraw — ገንዘብ ያወጡ*\n\n"
+            f"💰 ያሎት ሒሳብ: *{balance_data['balance']:.2f} ETB*\n\n"
+            "ለ withdraw ቻናልን ይቀላቀሉ:\n"
+            f"📢 {CHANNEL}\n"
+            f"👥 {GROUP}\n\n"
+            "⏳ Automated withdrawal coming soon!",
             parse_mode="Markdown",
         )
-        return
-
-    await message.answer(
-        f"🤑 *Withdraw — ገንዘብ ያወጡ*\n\n"
-        f"💰 ያሎት ሒሳብ: *{user.balance:.2f} ETB*\n\n"
-        "ለ withdraw ቻናልን ይቀላቀሉ:\n"
-        f"📢 {CHANNEL}\n"
-        f"👥 {GROUP}\n\n"
-        "⏳ Automated withdrawal coming soon!",
-        parse_mode="Markdown",
-    )
+    
+    except Exception as e:
+        if "404" in str(e):
+            await message.answer(
+                "❌ ተመዝግበው አልቀረቡም። *Register 📋* ይጫኑ።",
+                parse_mode="Markdown"
+            )
+        else:
+            logging.error(f"Withdraw check error: {e}")
+            await message.answer("❌ Could not process request. Please try again.")
 
 
 # ── Transfer ──────────────────────────────────────────────────────────────────
@@ -241,23 +259,34 @@ async def handle_invite(message: types.Message):
 # ── Convert Bonus ─────────────────────────────────────────────────────────────
 @dp.message(F.text == "Convert Bonus 💲")
 async def handle_convert_bonus(message: types.Message):
+    """
+    Convert bonus handler - checks coins via API.
+    NOW USES API instead of direct database access! ✅
+    """
     telegram_id = message.from_user.id
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.telegram_id == telegram_id))
-        user   = result.scalar_one_or_none()
-
-    if not user:
-        await message.answer("❌ ተመዝግበው አልቀረቡም። *Register 📋* ይጫኑ።", parse_mode="Markdown")
-        return
-
-    await message.answer(
-        f"💲 *Convert Bonus*\n\n"
-        f"🪙 ያሎት Coins: *{user.coins}*\n"
-        f"🎮 Play Wallet: *{user.play_balance:.2f} ETB*\n\n"
-        "100 Coins = 1 ETB Play Balance\n\n"
-        "⏳ Conversion feature coming soon!",
-        parse_mode="Markdown",
-    )
+    
+    try:
+        # Call FastAPI endpoint (Bot → API → Database)
+        balance_data = await api_client.get_user_balance(telegram_id)
+        
+        await message.answer(
+            f"💲 *Convert Bonus*\n\n"
+            f"🪙 ያሎት Coins: *{balance_data['coins']}*\n"
+            f"🎮 Play Wallet: *{balance_data['play_balance']:.2f} ETB*\n\n"
+            "100 Coins = 1 ETB Play Balance\n\n"
+            "⏳ Conversion feature coming soon!",
+            parse_mode="Markdown",
+        )
+    
+    except Exception as e:
+        if "404" in str(e):
+            await message.answer(
+                "❌ ተመዝግበው አልቀረቡም። *Register 📋* ይጫኑ።",
+                parse_mode="Markdown"
+            )
+        else:
+            logging.error(f"Convert bonus error: {e}")
+            await message.answer("❌ Could not process request. Please try again.")
 
 
 # ── Contact Support ───────────────────────────────────────────────────────────
@@ -303,7 +332,13 @@ async def catch_all(message: types.Message):
 # ── Main ──────────────────────────────────────────────────────────────────────
 async def main():
     print("🤖 Starting AMHABINGO Telegram Bot...")
-    await dp.start_polling(bot)
+    print(f"✅ Using API client: {settings.BACKEND_URL}")
+    try:
+        await dp.start_polling(bot)
+    finally:
+        # Close API client on shutdown
+        await api_client.close()
+        print("🛑 Bot stopped, API client closed")
 
 
 if __name__ == "__main__":

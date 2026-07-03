@@ -10,13 +10,123 @@ from ..auth import extract_user_from_init_data
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
+# ─── Register User (for Bot) ──────────────────────────────────────────────────
+@router.post("/register", response_model=UserResponse)
+async def register_user(
+    telegram_id: int,
+    phone_number: str,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Register a new user via Telegram bot (contact share).
+    If user exists, updates phone_number and grants bonus if not already given.
+    This endpoint is called by the bot, NOT by the Mini App.
+    """
+    # Check if user exists
+    result = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+
+    if user:
+        # User exists — update phone if missing and give bonus if needed
+        if not user.phone_number:
+            user.phone_number = phone_number
+            
+            # Give 10 ETB bonus only if they don't have it yet
+            if user.play_balance == 0.0:
+                user.play_balance = 10.0
+            
+            await db.commit()
+            await db.refresh(user)
+            return user
+        else:
+            # Already fully registered
+            return user
+    else:
+        # New user — create with phone and 10 ETB play bonus
+        user = User(
+            telegram_id=telegram_id,
+            phone_number=phone_number,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+            balance=0.0,
+            play_balance=10.0,   # FREE BONUS
+            coins=0,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+# ─── Get User by Telegram ID ──────────────────────────────────────────────────
+@router.get("/by-telegram/{telegram_id}", response_model=UserResponse)
+async def get_user_by_telegram_id(telegram_id: int, db: AsyncSession = Depends(get_db)):
+    """Get user by telegram_id (for bot operations)."""
+    result = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+# ─── Get User Balance by Telegram ID ──────────────────────────────────────────
+@router.get("/by-telegram/{telegram_id}/balance")
+async def get_user_balance_by_telegram_id(telegram_id: int, db: AsyncSession = Depends(get_db)):
+    """Get balance by telegram_id (for bot operations)."""
+    result = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "telegram_id": telegram_id,
+        "balance": user.balance,
+        "play_balance": user.play_balance,
+        "coins": user.coins,
+        "total": user.balance + user.play_balance
+    }
+
+
+# ─── Get User Transactions by Telegram ID ─────────────────────────────────────
+@router.get("/by-telegram/{telegram_id}/transactions")
+async def get_user_transactions_by_telegram_id(
+    telegram_id: int,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get transaction history by telegram_id (for bot operations)."""
+    # Get user
+    user_result = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get transactions
+    txns_result = await db.execute(
+        select(Transaction)
+        .where(Transaction.user_id == user.id)
+        .order_by(Transaction.created_at.desc())
+        .limit(limit)
+    )
+    return txns_result.scalars().all()
+
+
 # ─── Auth / Create User ───────────────────────────────────────────────────────
 @router.post("/auth", response_model=UserResponse)
 async def authenticate_user(
     init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Authenticate via Telegram initData. Falls back to demo user."""
+    """
+    Authenticate via Telegram initData. Falls back to demo user.
+    
+    IMPORTANT: Users MUST register via bot (share contact) to get phone_number.
+    If user accesses Mini App without bot registration, they're blocked until 
+    they complete registration in bot.
+    """
     if not init_data:
         # Demo user for local dev
         result = await db.execute(select(User).where(User.telegram_id == 123456789))
@@ -27,6 +137,7 @@ async def authenticate_user(
                 username="demo_user",
                 first_name="Demo",
                 last_name="Player",
+                phone_number="+251900000000",  # Demo phone
                 balance=1000.0,
                 play_balance=10.0,
                 coins=0
@@ -45,18 +156,32 @@ async def authenticate_user(
     user = result.scalar_one_or_none()
 
     if not user:
+        # Create basic user record but without phone_number and bonus
+        # They MUST complete bot registration to get phone + 10 ETB
         user = User(
             telegram_id=telegram_id,
             username=user_data.get("username"),
             first_name=user_data.get("first_name"),
             last_name=user_data.get("last_name"),
+            phone_number=None,  # Will be set via bot contact share
             balance=0.0,
-            play_balance=0.0,  # Given via Bot registration, but 0.0 default here
+            play_balance=0.0,   # Will be 10.0 after bot registration
             coins=0
         )
         db.add(user)
         await db.commit()
         await db.refresh(user)
+    
+    # Check if user has completed bot registration
+    if not user.phone_number:
+        raise HTTPException(
+            status_code=403, 
+            detail="registration_required",  # Frontend can detect this
+            headers={
+                "X-Registration-Status": "incomplete",
+                "X-Bot-Username": "amhabingo_bot"  # Or from settings
+            }
+        )
 
     return user
 

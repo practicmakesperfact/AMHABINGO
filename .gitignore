@@ -49,5 +49,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Documentation (exclude all .md except README.md)
+*.md
+!README.md
+
 # Prompts
 prompt2.md

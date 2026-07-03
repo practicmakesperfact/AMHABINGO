@@ -21,6 +21,28 @@ class TransactionType(str, enum.Enum):
     PAYOUT = "payout"
     DEPOSIT = "deposit"
     WITHDRAWAL = "withdrawal"
+    TRANSFER = "transfer"
+    REFERRAL_REWARD = "referral_reward"
+    BONUS_CONVERSION = "bonus_conversion"
+
+class DepositStatus(str, enum.Enum):
+    PENDING = "pending"
+    VERIFIED = "verified"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+class WithdrawalStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+
+class PaymentMethod(str, enum.Enum):
+    TELEBIRR = "telebirr"
+    CBEBIRR = "cbebirr"
+    BANK_TRANSFER = "bank_transfer"
+    MANUAL = "manual"
 
 class User(Base):
     __tablename__ = "users"
@@ -122,3 +144,193 @@ class Leaderboard(Base):
     total_earnings = Column(Float, default=0.0)
     rank = Column(Integer, nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Deposit(Base):
+    """
+    Deposit requests from users.
+    Flow: pending → verified (receipt submitted) → approved/rejected (by admin)
+    """
+    __tablename__ = "deposits"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    payment_method = Column(SQLEnum(PaymentMethod), default=PaymentMethod.TELEBIRR)
+    status = Column(SQLEnum(DepositStatus), default=DepositStatus.PENDING, index=True)
+    
+    # Receipt data (parsed from Telebirr message)
+    receipt_data = Column(JSON, nullable=True)  # {sender_name, sender_phone, tx_ref, amount, date}
+    receipt_message = Column(String, nullable=True)  # Original Telebirr message
+    
+    # Admin actions
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    admin_notes = Column(String, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Tracking
+    tx_ref = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], backref="deposits")
+    admin = relationship("User", foreign_keys=[admin_id])
+
+
+class Withdrawal(Base):
+    """
+    Withdrawal requests from users.
+    Flow: pending → approved/rejected (by admin) → processing → completed
+    """
+    __tablename__ = "withdrawals"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    phone_number = Column(String, nullable=False)  # Destination phone for Telebirr
+    payment_method = Column(SQLEnum(PaymentMethod), default=PaymentMethod.TELEBIRR)
+    status = Column(SQLEnum(WithdrawalStatus), default=WithdrawalStatus.PENDING, index=True)
+    
+    # Admin actions
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    admin_notes = Column(String, nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Payment proof
+    payment_proof = Column(String, nullable=True)  # Screenshot or transaction ID
+    
+    # Tracking
+    tx_ref = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], backref="withdrawals")
+    admin = relationship("User", foreign_keys=[admin_id])
+
+
+class Transfer(Base):
+    """
+    User-to-user balance transfers.
+    Instant transfer between registered users.
+    """
+    __tablename__ = "transfers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    amount = Column(Float, nullable=False)
+    
+    # Optional message
+    message = Column(String, nullable=True)
+    
+    # Tracking
+    tx_ref = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    sender = relationship("User", foreign_keys=[sender_id], backref="transfers_sent")
+    receiver = relationship("User", foreign_keys=[receiver_id], backref="transfers_received")
+
+
+class Referral(Base):
+    """
+    Referral tracking and rewards.
+    When a new user registers via referral link, referrer gets reward.
+    """
+    __tablename__ = "referrals"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    referrer_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    referee_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # Reward tracking
+    reward_amount = Column(Float, default=5.0)  # 5 ETB default
+    reward_paid = Column(Boolean, default=False)
+    reward_paid_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Tracking
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    referrer = relationship("User", foreign_keys=[referrer_id], backref="referrals_made")
+    referee = relationship("User", foreign_keys=[referee_id], backref="referred_by")
+
+
+class PaymentAccount(Base):
+    """
+    Admin-managed payment accounts for deposits.
+    Users deposit to these Telebirr numbers.
+    """
+    __tablename__ = "payment_accounts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    account_name = Column(String, nullable=False)  # "Main Telebirr Account"
+    account_number = Column(String, nullable=False)  # Telebirr phone number
+    payment_method = Column(SQLEnum(PaymentMethod), default=PaymentMethod.TELEBIRR)
+    
+    # Account details
+    account_holder_name = Column(String, nullable=False)
+    account_holder_phone = Column(String, nullable=True)
+    
+    # Status
+    is_active = Column(Boolean, default=True, index=True)
+    daily_limit = Column(Float, nullable=True)  # Optional daily deposit limit
+    
+    # Tracking
+    total_deposits = Column(Float, default=0.0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class AdminLog(Base):
+    """
+    Audit log for admin actions.
+    Tracks all deposits/withdrawals approved/rejected by admins.
+    """
+    __tablename__ = "admin_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    action = Column(String, nullable=False)  # approve_deposit, reject_withdrawal, etc.
+    resource_type = Column(String, nullable=False)  # deposit, withdrawal, user, etc.
+    resource_id = Column(Integer, nullable=False)
+    details = Column(JSON, nullable=True)  # Additional context
+    
+    # Tracking
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    admin = relationship("User", foreign_keys=[admin_id])
+
+
+class Notification(Base):
+    """
+    In-app notifications for users.
+    Winners, deposit approvals, withdrawal updates, etc.
+    """
+    __tablename__ = "notifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # Notification content
+    type = Column(String, nullable=False)  # winner, deposit_approved, withdrawal_rejected, etc.
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    
+    # Status
+    is_read = Column(Boolean, default=False, index=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Optional action link
+    action_url = Column(String, nullable=True)
+    
+    # Tracking
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    user = relationship("User", backref="notifications")

@@ -22,6 +22,18 @@ class Settings(BaseSettings):
 
     # CORS
     FRONTEND_URL: str = "http://localhost:3000"
+    BACKEND_URL: str = "http://localhost:8000"
+    
+    # Admin Configuration
+    ADMIN_TELEGRAM_IDS: str = "123456789"  # Comma-separated list of admin telegram_ids
+    MIN_WITHDRAWAL_AMOUNT: float = 50.0    # Minimum withdrawal: 50 ETB
+    MIN_DEPOSIT_AMOUNT: float = 10.0       # Minimum deposit: 10 ETB
+    REFERRAL_REWARD: float = 5.0           # Referral reward: 5 ETB
+    COIN_TO_ETB_RATE: int = 100            # 100 coins = 1 ETB
+    
+    def get_admin_ids(self) -> list[int]:
+        """Parse comma-separated admin IDs."""
+        return [int(x.strip()) for x in self.ADMIN_TELEGRAM_IDS.split(",") if x.strip()]
 
     class Config:
         env_file = ".env"

@@ -132,7 +132,16 @@ class ApiClient {
   async authenticateUser(initData?: string) {
     const headers: Record<string, string> = {};
     if (initData) headers['X-Telegram-Init-Data'] = initData;
-    return this.request('/api/users/auth', { method: 'POST', headers });
+    
+    try {
+      return await this.request('/api/users/auth', { method: 'POST', headers });
+    } catch (error: any) {
+      // Check if it's a registration required error
+      if (error.message?.includes('registration_required')) {
+        throw new Error('REGISTRATION_REQUIRED');
+      }
+      throw error;
+    }
   }
 
   async getPlatformStats() {

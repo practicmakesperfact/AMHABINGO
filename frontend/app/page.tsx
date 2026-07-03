@@ -34,15 +34,26 @@ export default function Home() {
         // No cache, authenticate
         const tg = (window as any).Telegram?.WebApp;
         const initData = tg?.initData || '';
-        const userData = await api.authenticateUser(initData || undefined);
-        setUser(userData);
-        sessionStorage.setItem('user', JSON.stringify(userData));
-
-        // Load stats in parallel (non-blocking)
-        api.getPlatformStats().then((data) => setStats(data as any)).catch(() => {});
         
-        // Check for active game and redirect if needed
-        await checkActiveGame(userData);
+        try {
+          const userData = await api.authenticateUser(initData || undefined);
+          setUser(userData);
+          sessionStorage.setItem('user', JSON.stringify(userData));
+
+          // Load stats in parallel (non-blocking)
+          api.getPlatformStats().then((data) => setStats(data as any)).catch(() => {});
+          
+          // Check for active game and redirect if needed
+          await checkActiveGame(userData);
+        } catch (authError: any) {
+          // Check if registration is required
+          if (authError.message === 'REGISTRATION_REQUIRED') {
+            // Redirect to registration required page
+            router.push('/register-required');
+            return;
+          }
+          throw authError;
+        }
         
         setLoading(false);
       } catch (e: any) {
