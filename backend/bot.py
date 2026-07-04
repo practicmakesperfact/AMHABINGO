@@ -4,7 +4,15 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from aiogram.types import (
+    ReplyKeyboardMarkup, 
+    KeyboardButton, 
+    WebAppInfo,
+    BotCommand,
+    BotCommandScopeDefault,
+    MenuButtonWebApp,
+    MenuButtonCommands
+)
 import sys
 import os
 
@@ -51,15 +59,52 @@ class TransferStates(StatesGroup):
     waiting_for_amount = State()
     waiting_for_confirmation = State()
 
+# ── Bot Commands Setup ───────────────────────────────────────────────────────
+async def set_bot_commands():
+    """Set bot commands for menu button."""
+    commands = [
+        BotCommand(command="start", description="🏠 Main Menu"),
+        BotCommand(command="play", description="🎮 Play Bingo"),
+        BotCommand(command="register", description="📋 Register / Share Contact"),
+        BotCommand(command="balance", description="💵 Check Balance"),
+        BotCommand(command="deposit", description="💰 Deposit Money"),
+        BotCommand(command="withdraw", description="🤑 Withdraw Money"),
+        BotCommand(command="transfer", description="🎁 Transfer to Friend"),
+        BotCommand(command="invite", description="🔗 Invite Friends"),
+        BotCommand(command="bonus", description="💲 Convert Bonus Coins"),
+        BotCommand(command="support", description="☎️ Contact Support"),
+        BotCommand(command="instruction", description="📖 How to Play"),
+        BotCommand(command="cancel", description="❌ Cancel Operation"),
+    ]
+    await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+    
+    # Set menu button to show "AMHABINGO"
+    try:
+        webapp_url = settings.FRONTEND_URL
+        if webapp_url and not webapp_url.startswith("http://"):
+            # Set menu button with Web App
+            menu_button = MenuButtonWebApp(
+                text="Play AMHABINGO 🎮",
+                web_app=WebAppInfo(url=webapp_url)
+            )
+        else:
+            # Fallback to commands menu
+            menu_button = MenuButtonCommands()
+        
+        await bot.set_chat_menu_button(menu_button=menu_button)
+        print("✅ Bot commands and menu button set successfully")
+    except Exception as e:
+        print(f"⚠️ Menu button setup: {e}")
+
+
 # ── Keyboards ─────────────────────────────────────────────────────────────────
 def get_main_menu_kb():
-    """Main menu matching Beteseb Bingo layout (5 rows, 2 per row)."""
+    """Simplified keyboard - main menu is now in bot commands."""
     webapp_url = settings.FRONTEND_URL
 
     # Telegram Web Apps require HTTPS
     if webapp_url.startswith("http://"):
         webapp_url = None
-        print("⚠️  WARNING: Telegram Web Apps need HTTPS. FRONTEND_URL must be an ngrok / production URL.")
 
     play_btn = (
         KeyboardButton(text="Play 🎮", web_app=WebAppInfo(url=webapp_url))
@@ -68,13 +113,9 @@ def get_main_menu_kb():
     )
 
     kb = [
-        [play_btn,                                 KeyboardButton(text="Register 📋", request_contact=True)],
-        [KeyboardButton(text="Check Balance 💵"),  KeyboardButton(text="Deposit 💰")],
-        [KeyboardButton(text="Contact Support ☎️"),KeyboardButton(text="Instruction 📖")],
-        [KeyboardButton(text="Transfer 🎁"),        KeyboardButton(text="Withdraw 🤑")],
-        [KeyboardButton(text="Invite 🔗"),          KeyboardButton(text="Convert Bonus 💲")],
+        [play_btn, KeyboardButton(text="Register 📋", request_contact=True)],
     ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, one_time_keyboard=False)
 
 
 # ── /start ────────────────────────────────────────────────────────────────────
@@ -100,10 +141,15 @@ async def cmd_start(message: types.Message):
                         referee_telegram_id=referee_id
                     )
                     await message.answer(
-                        "🎉 *እንኳን ደህና መጡ!*\n\n"
+                        "🎉 *እንኳን ደህና መጡ ወደ AMHABINGO!*\n\n"
                         "✅ የ referral reward ተመዝግቧል!\n"
                         "🎁 አጋዥዎ 5 ETB ያገኛል!\n\n"
-                        "📋 *Register* ይጫኑ ለመጀመር።",
+                        "📋 የአጠቃቀም መመሪያ:\n"
+                        "• /register - ለመመዝገብ\n"
+                        "• /play - ጨዋታ ለመጀመር\n"
+                        "• /balance - ሂሳብ ለማየት\n"
+                        "• /deposit - ገንዘብ ለማስገባት\n\n"
+                        "💡 ሙሉ menu ለማየት የታች ያለውን 📱 **Menu** button ይጫኑ!",
                         parse_mode="Markdown",
                         reply_markup=get_main_menu_kb()
                     )
@@ -112,30 +158,128 @@ async def cmd_start(message: types.Message):
                     # Referral might already exist or other error
                     logging.warning(f"Referral creation failed: {e}")
     
-    # Normal start message
+    # Normal start message with AMHABINGO branding
     await message.answer(
-        "🎲 *Welcome to AMHABINGO!* Choose an Option below.\n\n"
-        "📋 ለማጫወት ፊርማ ሰጥቶ *Register* ይጫኑ።\n"
-        "🎮 ከዛ *Play* ብለው ጨዋታ ይጀምሩ!",
+        "🎲 *እንኳን ደህና መጡ ወደ AMHABINGO!*\n\n"
+        "የኢትዮጵያ #1 Real-time Bingo Game! 🎯\n\n"
+        "📋 *የመጀመሪያ ደረጃዎች:*\n"
+        "1️⃣ /register - ለመመዝገብ ይጫኑ\n"
+        "2️⃣ /deposit - ገንዘብ ያስገቡ (min 10 ETB)\n"
+        "3️⃣ /play - ጨዋታውን ይጀምሩ!\n\n"
+        "💡 *ሁሉንም commands ለማየት:*\n"
+        "👇 የታች ያለውን **Menu** button (📱) ይጫኑ\n\n"
+        f"📢 Channel: {CHANNEL}\n"
+        f"👥 Support: {GROUP}",
         reply_markup=get_main_menu_kb(),
         parse_mode="Markdown",
     )
 
 
-# ── /help ─────────────────────────────────────────────────────────────────────
+# ── Commands ─────────────────────────────────────────────────────────────────
+
+@dp.message(Command("play"))
+async def cmd_play(message: types.Message):
+    """Play command - sends web app button."""
+    webapp_url = settings.FRONTEND_URL
+    
+    if webapp_url and not webapp_url.startswith("http://"):
+        kb = [[KeyboardButton(text="🎮 Play AMHABINGO", web_app=WebAppInfo(url=webapp_url))]]
+        keyboard = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+        
+        await message.answer(
+            "🎮 *የ AMHABINGO ጨዋታ*\n\n"
+            "👇 የታች ያለውን button ይጫኑ ለመጫወት:",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+    else:
+        await message.answer(
+            "🎮 ጨዋታ በቅርቡ ይጀምራል!\n"
+            f"እስከዚያው: {webapp_url or 'Coming soon'}"
+        )
+
+
+@dp.message(Command("register"))
+async def cmd_register(message: types.Message):
+    """Register command - asks for contact."""
+    kb = [[KeyboardButton(text="📋 Share Contact", request_contact=True)]]
+    keyboard = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True, one_time_keyboard=True)
+    
+    await message.answer(
+        "📋 *ለመመዝገብ*\n\n"
+        "እባክዎን የስልክ ቁጥርዎን ያጋሩን:\n"
+        "👇 *Share Contact* button ይጫኑ\n\n"
+        "🎁 አዲስ ተጫዋቾች *10 ETB* bonus ያገኛሉ!",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+@dp.message(Command("balance"))
+async def cmd_balance(message: types.Message):
+    """Balance command."""
+    await check_balance(message)
+
+
+@dp.message(Command("deposit"))
+async def cmd_deposit(message: types.Message, state: FSMContext):
+    """Deposit command."""
+    await handle_deposit(message, state)
+
+
+@dp.message(Command("withdraw"))
+async def cmd_withdraw(message: types.Message, state: FSMContext):
+    """Withdraw command."""
+    await handle_withdraw(message, state)
+
+
+@dp.message(Command("transfer"))
+async def cmd_transfer(message: types.Message, state: FSMContext):
+    """Transfer command."""
+    await handle_transfer(message, state)
+
+
+@dp.message(Command("invite"))
+async def cmd_invite(message: types.Message):
+    """Invite command."""
+    await handle_invite(message)
+
+
+@dp.message(Command("bonus"))
+async def cmd_bonus(message: types.Message):
+    """Convert bonus command."""
+    await handle_convert_bonus(message)
+
+
+@dp.message(Command("support"))
+async def cmd_support(message: types.Message):
+    """Support command."""
+    await handle_support(message)
+
+
+@dp.message(Command("instruction"))
+async def cmd_instruction(message: types.Message):
+    """Instruction command."""
+    await handle_instruction(message)
+
+
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
     await message.answer(
-        "🆘 *AMHABINGO Help*\n\n"
-        "• *Register* — ስልክ ቁጥርዎን ያጋሩ (10 ETB ቦነስ ያገኛሉ)\n"
-        "• *Play* — ጨዋታ ይጀምሩ\n"
-        "• *Check Balance* — ቀሪ ሒሳብ ያረጋግጡ\n"
-        "• *Deposit* — ገንዘብ ይጨምሩ\n"
-        "• *Withdraw* — ገንዘብ ያወጡ\n"
-        "• *Transfer* — ወደ ሌሎች ያስተላልፉ\n"
-        "• *Invite* — ጓደኛዎን ይጋብዙ\n\n"
+        "🆘 *AMHABINGO Commands*\n\n"
+        "🎮 /play — ጨዋታ ይጀምሩ\n"
+        "📋 /register — ይመዝገቡ (10 ETB bonus)\n"
+        "💵 /balance — ሂሳብ ያረጋግጡ\n"
+        "💰 /deposit — ገንዘብ ያስገቡ\n"
+        "🤑 /withdraw — ገንዘብ ያውጡ\n"
+        "🎁 /transfer — ወደ ጓደኛ ያስተላልፉ\n"
+        "🔗 /invite — ጓደኞችን ይጋብዙ (5 ETB/friend)\n"
+        "💲 /bonus — Bonus coins ቀይሩ\n"
+        "☎️ /support — Support ያግኙ\n"
+        "📖 /instruction — የአጫወት ስልት\n"
+        "❌ /cancel — Operation ይሰርዙ\n\n"
         f"📢 Channel: {CHANNEL}\n"
-        f"👥 Group: {GROUP}",
+        f"👥 Support: {GROUP}",
         parse_mode="Markdown",
     )
 
@@ -197,7 +341,6 @@ async def handle_contact(message: types.Message):
 
 
 # ── Check Balance ─────────────────────────────────────────────────────────────
-@dp.message(F.text == "Check Balance 💵")
 async def check_balance(message: types.Message):
     """
     Check user balance via API.
@@ -232,7 +375,6 @@ async def check_balance(message: types.Message):
 
 
 # ── Deposit ───────────────────────────────────────────────────────────────────
-@dp.message(F.text == "Deposit 💰")
 async def handle_deposit(message: types.Message, state: FSMContext):
     """Start deposit flow - ask for amount."""
     await message.answer(
@@ -383,7 +525,6 @@ async def deposit_receipt_received(message: types.Message, state: FSMContext):
 
 
 # ── Withdraw ──────────────────────────────────────────────────────────────────
-@dp.message(F.text == "Withdraw 🤑")
 async def handle_withdraw(message: types.Message, state: FSMContext):
     """
     Start withdrawal flow - check balance and ask for amount.
@@ -576,7 +717,6 @@ async def withdrawal_confirmation_received(message: types.Message, state: FSMCon
 
 
 # ── Transfer ──────────────────────────────────────────────────────────────────
-@dp.message(F.text == "Transfer 🎁")
 async def handle_transfer(message: types.Message, state: FSMContext):
     """Start transfer flow - ask for receiver telegram ID."""
     await message.answer(
@@ -750,7 +890,6 @@ async def transfer_confirmation_received(message: types.Message, state: FSMConte
 
 
 # ── Invite ────────────────────────────────────────────────────────────────────
-@dp.message(F.text == "Invite 🔗")
 async def handle_invite(message: types.Message):
     """Generate referral link for user."""
     bot_info  = await bot.get_me()
@@ -788,7 +927,6 @@ async def handle_invite(message: types.Message):
 
 
 # ── Convert Bonus ─────────────────────────────────────────────────────────────
-@dp.message(F.text == "Convert Bonus 💲")
 async def handle_convert_bonus(message: types.Message):
     """
     Convert bonus handler - checks coins via API.
@@ -874,7 +1012,6 @@ async def handle_conversion_amount(message: types.Message):
 
 
 # ── Contact Support ───────────────────────────────────────────────────────────
-@dp.message(F.text == "Contact Support ☎️")
 async def handle_support(message: types.Message):
     await message.answer(
         "☎️ *Contact Support*\n\n"
@@ -887,7 +1024,6 @@ async def handle_support(message: types.Message):
 
 
 # ── Instruction ───────────────────────────────────────────────────────────────
-@dp.message(F.text == "Instruction 📖")
 async def handle_instruction(message: types.Message):
     await message.answer(
         "📖 *AMHABINGO — አጫወት ስልት*\n\n"
@@ -941,7 +1077,12 @@ async def catch_all(message: types.Message, state: FSMContext):
 async def main():
     print("🤖 Starting AMHABINGO Telegram Bot...")
     print(f"✅ Using API client: {settings.BACKEND_URL}")
+    
+    # Set bot commands and menu button
+    await set_bot_commands()
+    
     try:
+        print("🎯 Bot is now polling for updates...")
         await dp.start_polling(bot)
     finally:
         # Close API client on shutdown
