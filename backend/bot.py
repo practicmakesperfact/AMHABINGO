@@ -2,6 +2,8 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 import sys
 import os
@@ -11,6 +13,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.config import get_settings
 from bot_api_client import BotAPIClient
+from telebirr_parser import TelebirrParser
 
 settings = get_settings()
 
@@ -21,8 +24,32 @@ dp = Dispatcher()
 # Initialize API client (Bot → API → Database)
 api_client = BotAPIClient(settings.BACKEND_URL)
 
+# Initialize Telebirr parser
+telebirr_parser = TelebirrParser()
+
 CHANNEL = "@amhabingo"
-GROUP   = "@amhabingochat"
+GROUP   = "@amhabingosupport_team"
+
+
+# ── FSM States ────────────────────────────────────────────────────────────────
+class DepositStates(StatesGroup):
+    """FSM states for deposit flow."""
+    waiting_for_amount = State()
+    waiting_for_receipt = State()
+
+
+class WithdrawalStates(StatesGroup):
+    """FSM states for withdrawal flow."""
+    waiting_for_amount = State()
+    waiting_for_phone = State()
+    waiting_for_confirmation = State()
+
+
+class TransferStates(StatesGroup):
+    """FSM states for transfer flow."""
+    waiting_for_receiver_id = State()
+    waiting_for_amount = State()
+    waiting_for_confirmation = State()
 
 # ── Keyboards ─────────────────────────────────────────────────────────────────
 def get_main_menu_kb():
@@ -53,6 +80,39 @@ def get_main_menu_kb():
 # ── /start ────────────────────────────────────────────────────────────────────
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    """
+    Start command - handles referrals if user comes from referral link.
+    Format: /start ref_123456789
+    """
+    # Check if this is a referral
+    if message.text and len(message.text.split()) > 1:
+        args = message.text.split()[1]
+        if args.startswith("ref_"):
+            referrer_id = int(args.replace("ref_", ""))
+            referee_id = message.from_user.id
+            
+            # Don't process if user refers themselves
+            if referrer_id != referee_id:
+                try:
+                    # Create referral (will reward referrer)
+                    await api_client.create_referral(
+                        referrer_telegram_id=referrer_id,
+                        referee_telegram_id=referee_id
+                    )
+                    await message.answer(
+                        "🎉 *እንኳን ደህና መጡ!*\n\n"
+                        "✅ የ referral reward ተመዝግቧል!\n"
+                        "🎁 አጋዥዎ 5 ETB ያገኛል!\n\n"
+                        "📋 *Register* ይጫኑ ለመጀመር።",
+                        parse_mode="Markdown",
+                        reply_markup=get_main_menu_kb()
+                    )
+                    return
+                except Exception as e:
+                    # Referral might already exist or other error
+                    logging.warning(f"Referral creation failed: {e}")
+    
+    # Normal start message
     await message.answer(
         "🎲 *Welcome to AMHABINGO!* Choose an Option below.\n\n"
         "📋 ለማጫወት ፊርማ ሰጥቶ *Register* ይጫኑ።\n"
@@ -173,22 +233,160 @@ async def check_balance(message: types.Message):
 
 # ── Deposit ───────────────────────────────────────────────────────────────────
 @dp.message(F.text == "Deposit 💰")
-async def handle_deposit(message: types.Message):
+async def handle_deposit(message: types.Message, state: FSMContext):
+    """Start deposit flow - ask for amount."""
     await message.answer(
         "💰 *Deposit — ገንዘብ ይጨምሩ*\n\n"
-        "አሁን ለ Deposit፣ ቦቱን ያናግሩ ወይም ቻናላችንን ይቀላቀሉ:\n\n"
-        f"📢 {CHANNEL}\n"
-        f"👥 {GROUP}\n\n"
-        "⏳ Online payment integration coming soon!",
+        "ምን ያህል ገንዘብ deposit ማድረግ ይፈልጋሉ?\n"
+        "ዝቅተኛ deposit: *10 ETB*\n\n"
+        "የገንዘብ መጠኑን ይላኩ (ምሳሌ: 100)",
         parse_mode="Markdown",
     )
+    await state.set_state(DepositStates.waiting_for_amount)
+
+
+@dp.message(DepositStates.waiting_for_amount)
+async def deposit_amount_received(message: types.Message, state: FSMContext):
+    """User entered deposit amount."""
+    try:
+        amount = float(message.text)
+        
+        if amount < 10:
+            await message.answer(
+                "❌ ዝቅተኛ deposit መጠን 10 ETB ነው።\n"
+                "እባክዎን ከ10 ETB በላይ ያስገቡ።"
+            )
+            return
+        
+        # Create deposit via API
+        telegram_id = message.from_user.id
+        deposit = await api_client.create_deposit(
+            telegram_id=telegram_id,
+            amount=amount
+        )
+        
+        # Get payment account
+        payment_accounts = await api_client.get_payment_accounts()
+        if not payment_accounts:
+            await message.answer(
+                "❌ የክፍያ መረጃ አልተገኘም። እባክዎን support ያናግሩ።"
+            )
+            await state.clear()
+            return
+        
+        account = payment_accounts[0]  # Get first active account
+        
+        # Store deposit info in state
+        await state.update_data(
+            deposit_id=deposit['deposit_id'],
+            tx_ref=deposit['tx_ref'],
+            amount=amount,
+            account_phone=account['phone_number'],
+            account_holder=account['account_holder']
+        )
+        
+        # Send payment instructions (your format)
+        await message.answer(
+            f"💰 *ገንዘብ ማስገባት (Deposit)*\n\n"
+            f"የሚያጋጥማቹ የክፍያ ችግር: @amhabingosupport_team ላይ ፃፉልን።\n\n"
+            f"*የክፍያ መመሪያዎች:*\n\n"
+            f"1️⃣ ከታች ባለው የቴሌብር አካውንት *{amount} ብር* ያስገቡ\n"
+            f"   📱 Phone: *{account['phone_number'].replace('+251', '0')}*\n\n"
+            f"2️⃣ የከፈሉበትን አጭር የጹሁፍ መልዕክት (message) copy በማድረግ\n"
+            f"   እዚህ ላይ Past አድረገው ያስገቡና ይላኩት 👇👇👇\n\n"
+            f"📝 Reference: `{deposit['tx_ref']}`",
+            parse_mode="Markdown"
+        )
+        
+        await state.set_state(DepositStates.waiting_for_receipt)
+        
+    except ValueError:
+        await message.answer(
+            "❌ እባክዎን ትክክለኛ ቁጥር ያስገቡ።\n"
+            "ምሳሌ: 100"
+        )
+    except Exception as e:
+        logging.error(f"Deposit creation error: {e}")
+        await message.answer(
+            "❌ ችግር ተፈጥሯል። እባክዎን እንደገና ይሞክሩ።"
+        )
+        await state.clear()
+
+
+@dp.message(DepositStates.waiting_for_receipt)
+async def deposit_receipt_received(message: types.Message, state: FSMContext):
+    """User sent Telebirr confirmation message."""
+    # Get state data
+    data = await state.get_data()
+    tx_ref = data.get('tx_ref')
+    expected_amount = data.get('amount')
+    
+    if not message.text:
+        await message.answer(
+            "❌ እባክዎን Telebirr confirmation message forward ያድርጉ።\n"
+            "ወይም የላኩትን መጠን እና transaction ID በጽሁፍ ያስገቡ።"
+        )
+        return
+    
+    try:
+        # Parse Telebirr message
+        receipt_data = telebirr_parser.parse(message.text)
+        
+        if not receipt_data:
+            await message.answer(
+                "❌ Telebirr message ማንበብ አልተቻለም።\n\n"
+                "እባክዎን የሚከተሉትን ያረጋግጡ:\n"
+                "• Telebirr confirmation message forward አድርገዋል\n"
+                "• Message ሙሉ በሙሉ ተመርጧል\n\n"
+                "ወይም በዚህ ቅርጸት ያስገቡ:\n"
+                f"Amount: {expected_amount}\n"
+                f"Reference: {tx_ref}"
+            )
+            return
+        
+        # Validate amount
+        if not telebirr_parser.validate_receipt(receipt_data, expected_amount):
+            await message.answer(
+                f"❌ የገንዘብ መጠን አይመሳሰልም!\n\n"
+                f"የጠበቁት: *{expected_amount} ETB*\n"
+                f"ከ Telebirr: *{receipt_data.get('amount')} ETB*\n\n"
+                "እባክዎን ትክክለኛውን መጠን ያረጋግጡ።",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Verify deposit via API
+        result = await api_client.verify_deposit(
+            tx_ref=tx_ref,
+            receipt_data=receipt_data
+        )
+        
+        await message.answer(
+            "✅ *Receipt በተሳካ ሁኔታ ገብቷል!*\n\n"
+            f"💰 መጠን: *{expected_amount} ETB*\n"
+            f"📝 Reference: `{tx_ref}`\n\n"
+            "👨‍💼 Admin በ24 ሰዓት ውስጥ ይፈትሻል እና ያፀድቃል።\n"
+            "✅ ሲፈቀድ notification ይደርስዎታል።\n\n"
+            f"📢 ለበለጠ መረጃ: {CHANNEL}",
+            parse_mode="Markdown"
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logging.error(f"Receipt verification error: {e}")
+        await message.answer(
+            "❌ Receipt ማረጋገጥ አልተቻለም።\n"
+            "እባክዎን እንደገና ይሞክሩ ወይም support ያናግሩ።"
+        )
+        await state.clear()
 
 
 # ── Withdraw ──────────────────────────────────────────────────────────────────
 @dp.message(F.text == "Withdraw 🤑")
-async def handle_withdraw(message: types.Message):
+async def handle_withdraw(message: types.Message, state: FSMContext):
     """
-    Withdraw handler - checks balance via API.
+    Start withdrawal flow - check balance and ask for amount.
     NOW USES API instead of direct database access! ✅
     """
     telegram_id = message.from_user.id
@@ -209,13 +407,16 @@ async def handle_withdraw(message: types.Message):
 
         await message.answer(
             f"🤑 *Withdraw — ገንዘብ ያወጡ*\n\n"
-            f"💰 ያሎት ሒሳብ: *{balance_data['balance']:.2f} ETB*\n\n"
-            "ለ withdraw ቻናልን ይቀላቀሉ:\n"
-            f"📢 {CHANNEL}\n"
-            f"👥 {GROUP}\n\n"
-            "⏳ Automated withdrawal coming soon!",
+            f"💰 ያሎት ሒሳብ: *{balance_data['balance']:.2f} ETB*\n"
+            f"ዝቅተኛ withdraw: *50 ETB*\n\n"
+            "ምን ያህል ማውጣት ይፈልጋሉ?\n"
+            "የገንዘብ መጠኑን ይላኩ (ምሳሌ: 100)",
             parse_mode="Markdown",
         )
+        
+        # Store balance in state
+        await state.update_data(current_balance=balance_data['balance'])
+        await state.set_state(WithdrawalStates.waiting_for_amount)
     
     except Exception as e:
         if "404" in str(e):
@@ -228,32 +429,362 @@ async def handle_withdraw(message: types.Message):
             await message.answer("❌ Could not process request. Please try again.")
 
 
+@dp.message(WithdrawalStates.waiting_for_amount)
+async def withdrawal_amount_received(message: types.Message, state: FSMContext):
+    """User entered withdrawal amount."""
+    try:
+        amount = float(message.text)
+        data = await state.get_data()
+        current_balance = data.get('current_balance', 0)
+        
+        if amount < 50:
+            await message.answer(
+                "❌ ዝቅተኛ withdrawal መጠን 50 ETB ነው።"
+            )
+            return
+        
+        if amount > current_balance:
+            await message.answer(
+                f"❌ በቂ ሒሳብ የለዎትም!\n\n"
+                f"የጠየቁት: *{amount} ETB*\n"
+                f"ያሎት: *{current_balance} ETB*",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Store amount and ask for phone
+        await state.update_data(amount=amount)
+        await message.answer(
+            f"💰 Withdrawal መጠን: *{amount} ETB*\n\n"
+            f"📱 የ Telebirr ስልክ ቁጥርዎን ያስገቡ\n"
+            f"ምሳሌ: +251911223344 ወይም 0911223344",
+            parse_mode="Markdown"
+        )
+        await state.set_state(WithdrawalStates.waiting_for_phone)
+        
+    except ValueError:
+        await message.answer(
+            "❌ እባክዎን ትክክለኛ ቁጥር ያስገቡ።\n"
+            "ምሳሌ: 100"
+        )
+
+
+@dp.message(WithdrawalStates.waiting_for_phone)
+async def withdrawal_phone_received(message: types.Message, state: FSMContext):
+    """User entered phone number."""
+    phone = message.text.strip()
+    
+    # Validate phone format
+    if not phone or len(phone) < 10:
+        await message.answer(
+            "❌ ትክክለኛ ስልክ ቁጥር ያስገቡ።\n"
+            "ምሳሌ: +251911223344 ወይም 0911223344"
+        )
+        return
+    
+    # Format phone number
+    formatted_phone = telebirr_parser.format_phone(phone)
+    
+    # Store phone and show confirmation
+    data = await state.get_data()
+    amount = data.get('amount')
+    
+    await state.update_data(phone=formatted_phone)
+    
+    await message.answer(
+        f"📋 *የ Withdrawal መረጃ:*\n\n"
+        f"💰 መጠን: *{amount} ETB*\n"
+        f"📱 ስልክ: *{formatted_phone}*\n\n"
+        f"⚠️ *አስፈላጊ:*\n"
+        f"• ገንዘቡ ወዲያውኑ ከሒሳብዎ ይቀነሳል\n"
+        f"• Admin ያፀድቃል እና ይልካል\n"
+        f"• ከተቀበለ በኋላ ብቻ ያጠናቅቃል\n\n"
+        f"ለመቀጠል *አዎ* ይላኩ\n"
+        f"ለመሰረዝ *ዋጋ* ይላኩ",
+        parse_mode="Markdown"
+    )
+    await state.set_state(WithdrawalStates.waiting_for_confirmation)
+
+
+@dp.message(WithdrawalStates.waiting_for_confirmation)
+async def withdrawal_confirmation_received(message: types.Message, state: FSMContext):
+    """User confirmed or cancelled withdrawal."""
+    text = message.text.strip().lower()
+    
+    if text == "ዋጋ" or text == "cancel":
+        await message.answer(
+            "❌ Withdrawal ተሰርዟል።",
+            reply_markup=get_main_menu_kb()
+        )
+        await state.clear()
+        return
+    
+    if text != "አዎ" and text != "yes":
+        await message.answer(
+            "እባክዎን *አዎ* ለማረጋገጥ ወይም *ዋጋ* ለመሰረዝ ይላኩ።",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # User confirmed - create withdrawal
+    data = await state.get_data()
+    amount = data.get('amount')
+    phone = data.get('phone')
+    telegram_id = message.from_user.id
+    
+    try:
+        # Request withdrawal via API
+        result = await api_client.request_withdrawal(
+            telegram_id=telegram_id,
+            amount=amount,
+            phone_number=phone
+        )
+        
+        await message.answer(
+            "✅ *Withdrawal ተመዝግቧል!*\n\n"
+            f"💰 መጠን: *{amount} ETB*\n"
+            f"📱 ስልክ: *{phone}*\n"
+            f"📝 Reference: `{result['tx_ref']}`\n\n"
+            f"⚠️ ገንዘቡ ከሒሳብዎ ተቀንሷል (held)\n\n"
+            f"👨‍💼 Admin በ24 ሰዓት ውስጥ ይፈትሻል\n"
+            f"✅ ከተፈቀደ በኋላ ወደ Telebirr ይላካል\n"
+            f"📬 Notification ይደርስዎታል\n\n"
+            f"📢 Status: {CHANNEL}",
+            parse_mode="Markdown",
+            reply_markup=get_main_menu_kb()
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logging.error(f"Withdrawal request error: {e}")
+        error_msg = str(e)
+        
+        if "Insufficient balance" in error_msg:
+            await message.answer(
+                "❌ በቂ ሒሳብ የለዎትም።",
+                reply_markup=get_main_menu_kb()
+            )
+        else:
+            await message.answer(
+                "❌ Withdrawal መጠየቅ አልተቻለም።\n"
+                "እባክዎን እንደገና ይሞክሩ።",
+                reply_markup=get_main_menu_kb()
+            )
+        
+        await state.clear()
+
+
 # ── Transfer ──────────────────────────────────────────────────────────────────
 @dp.message(F.text == "Transfer 🎁")
-async def handle_transfer(message: types.Message):
+async def handle_transfer(message: types.Message, state: FSMContext):
+    """Start transfer flow - ask for receiver telegram ID."""
     await message.answer(
         "🎁 *Transfer — ወደ ሌሎች ያስተላልፉ*\n\n"
-        "ገንዘብ ለሌሎች ተጫዋቾች ለማስተላለፍ:\n\n"
-        f"📢 ቻናል: {CHANNEL}\n"
-        f"👥 ግሩፕ: {GROUP}\n\n"
-        "⏳ Transfer feature coming soon!",
-        parse_mode="Markdown",
+        "ገንዘብ ለሌሎች ተጫዋቾች ያስተላልፉ!\n\n"
+        "የተቀባዩን Telegram ID ያስገቡ:\n"
+        "ምሳሌ: 123456789\n\n"
+        "💡 ጓደኛዎን ID ለማወቅ /start ላይ ይጫኑ",
+        parse_mode="Markdown"
     )
+    await state.set_state(TransferStates.waiting_for_receiver_id)
+
+
+@dp.message(TransferStates.waiting_for_receiver_id)
+async def transfer_receiver_received(message: types.Message, state: FSMContext):
+    """User entered receiver telegram ID."""
+    try:
+        receiver_id = int(message.text.strip())
+        sender_id = message.from_user.id
+        
+        if receiver_id == sender_id:
+            await message.answer(
+                "❌ ለራስዎ transfer ማድረግ አይችሉም።"
+            )
+            return
+        
+        # Verify receiver exists
+        try:
+            receiver = await api_client.get_user_by_telegram_id(receiver_id)
+            if not receiver:
+                await message.answer(
+                    f"❌ ተጫዋች {receiver_id} አልተገኘም።\n"
+                    "እባክዎን ትክክለኛ Telegram ID ያረጋግጡ።"
+                )
+                return
+        except Exception as e:
+            await message.answer(
+                f"❌ ተጫዋች አልተገኘም። ID ያረጋግጡ።"
+            )
+            return
+        
+        # Store receiver info
+        await state.update_data(
+            receiver_id=receiver_id,
+            receiver_name=receiver.get('username') or receiver.get('first_name') or f"Player{receiver_id}"
+        )
+        
+        await message.answer(
+            f"✅ ተቀባይ: *{receiver.get('username') or receiver.get('first_name')}*\n\n"
+            f"ምን ያህል መጠን ማስተላለፍ ይፈልጋሉ?\n"
+            f"ዝቅተኛ: *10 ETB*\n\n"
+            f"መጠኑን ያስገቡ (ምሳሌ: 50):",
+            parse_mode="Markdown"
+        )
+        await state.set_state(TransferStates.waiting_for_amount)
+        
+    except ValueError:
+        await message.answer(
+            "❌ ትክክለኛ Telegram ID ያስገቡ።\n"
+            "ምሳሌ: 123456789"
+        )
+
+
+@dp.message(TransferStates.waiting_for_amount)
+async def transfer_amount_received(message: types.Message, state: FSMContext):
+    """User entered transfer amount."""
+    try:
+        amount = float(message.text.strip())
+        
+        if amount < 10:
+            await message.answer(
+                "❌ ዝቅተኛ transfer መጠን 10 ETB ነው።"
+            )
+            return
+        
+        # Check sender balance
+        sender_id = message.from_user.id
+        balance_data = await api_client.get_user_balance(sender_id)
+        
+        if balance_data['balance'] < amount:
+            await message.answer(
+                f"❌ በቂ ሒሳብ የለዎትም!\n\n"
+                f"የጠየቁት: *{amount} ETB*\n"
+                f"ያሎት: *{balance_data['balance']} ETB*",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Store amount and show confirmation
+        data = await state.get_data()
+        receiver_name = data.get('receiver_name')
+        
+        await state.update_data(amount=amount)
+        
+        await message.answer(
+            f"📋 *Transfer መረጃ:*\n\n"
+            f"👤 ወደ: *{receiver_name}*\n"
+            f"💰 መጠን: *{amount} ETB*\n\n"
+            f"ለማረጋገጥ *አዎ* ይላኩ\n"
+            f"ለመሰረዝ *ዋጋ* ይላኩ",
+            parse_mode="Markdown"
+        )
+        await state.set_state(TransferStates.waiting_for_confirmation)
+        
+    except ValueError:
+        await message.answer(
+            "❌ ትክክለኛ ቁጥር ያስገቡ።"
+        )
+    except Exception as e:
+        logging.error(f"Transfer amount error: {e}")
+        await message.answer(
+            "❌ ችግር ተፈጥሯል። እባክዎን እንደገና ይሞክሩ።"
+        )
+        await state.clear()
+
+
+@dp.message(TransferStates.waiting_for_confirmation)
+async def transfer_confirmation_received(message: types.Message, state: FSMContext):
+    """User confirmed or cancelled transfer."""
+    text = message.text.strip().lower()
+    
+    if text == "ዋጋ" or text == "cancel":
+        await message.answer(
+            "❌ Transfer ተሰርዟል።",
+            reply_markup=get_main_menu_kb()
+        )
+        await state.clear()
+        return
+    
+    if text != "አዎ" and text != "yes":
+        await message.answer(
+            "እባክዎን *አዎ* ለማረጋገጥ ወይም *ዋጋ* ለመሰረዝ ይላኩ።",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # User confirmed - send transfer
+    data = await state.get_data()
+    receiver_id = data.get('receiver_id')
+    receiver_name = data.get('receiver_name')
+    amount = data.get('amount')
+    sender_id = message.from_user.id
+    
+    try:
+        # Send transfer via API
+        result = await api_client.send_transfer(
+            sender_telegram_id=sender_id,
+            receiver_telegram_id=receiver_id,
+            amount=amount
+        )
+        
+        await message.answer(
+            f"✅ *Transfer ተሳክቷል!*\n\n"
+            f"👤 ወደ: *{receiver_name}*\n"
+            f"💰 መጠን: *{amount} ETB*\n"
+            f"💵 አዲስ ሒሳብ: *{result['sender_new_balance']} ETB*\n\n"
+            f"📬 ተቀባዩ notification ተቀብሏል።",
+            parse_mode="Markdown",
+            reply_markup=get_main_menu_kb()
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logging.error(f"Transfer execution error: {e}")
+        await message.answer(
+            f"❌ Transfer አልተሳካም።\n{str(e)}",
+            reply_markup=get_main_menu_kb()
+        )
+        await state.clear()
 
 
 # ── Invite ────────────────────────────────────────────────────────────────────
 @dp.message(F.text == "Invite 🔗")
 async def handle_invite(message: types.Message):
+    """Generate referral link for user."""
     bot_info  = await bot.get_me()
     invite_url = f"https://t.me/{bot_info.username}?start=ref_{message.from_user.id}"
-    await message.answer(
-        "🔗 *ጓደኛዎን ይጋብዙ!*\n\n"
-        "ይህን ሊንክ ጓደኞቸዎ ያጋሩ:\n\n"
-        f"`{invite_url}`\n\n"
-        "📢 ቻናላችንንም ያጋሩ:\n"
-        f"{CHANNEL}",
-        parse_mode="Markdown",
-    )
+    
+    # Get user's referral stats
+    try:
+        referrals = await api_client.get_referrals(message.from_user.id)
+        total_referrals = referrals.get('total_referrals', 0)
+        total_earned = referrals.get('total_earned', 0)
+        
+        await message.answer(
+            f"🔗 *ጓደኞቸዎን ይጋብዙ!*\n\n"
+            f"📊 *የእርስዎ Statistics:*\n"
+            f"👥 Total Invites: *{total_referrals}*\n"
+            f"💰 Total Earned: *{total_earned} ETB*\n\n"
+            f"🎁 *ለእያንዳንዱ ጓደኛ 5 ETB ያገኛሉ!*\n\n"
+            f"ይህን ሊንክ ያጋሩ:\n"
+            f"`{invite_url}`\n\n"
+            f"📢 ቻናላችንንም ያጋሩ:\n"
+            f"{CHANNEL}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        # Fallback if API fails
+        await message.answer(
+            f"🔗 *ጓደኛዎን ይጋብዙ!*\n\n"
+            f"🎁 ለእያንዳንዱ ጓደኛ *5 ETB* ያገኛሉ!\n\n"
+            f"ይህን ሊንክ ጓደኞቸዎ ያጋሩ:\n\n"
+            f"`{invite_url}`\n\n"
+            f"📢 ቻናላችንንም ያጋሩ:\n"
+            f"{CHANNEL}",
+            parse_mode="Markdown",
+        )
 
 
 # ── Convert Bonus ─────────────────────────────────────────────────────────────
@@ -269,13 +800,29 @@ async def handle_convert_bonus(message: types.Message):
         # Call FastAPI endpoint (Bot → API → Database)
         balance_data = await api_client.get_user_balance(telegram_id)
         
+        if balance_data['coins'] < 100:
+            await message.answer(
+                f"💲 *Convert Bonus*\n\n"
+                f"🪙 ያሎት Coins: *{balance_data['coins']}*\n"
+                f"🎮 Play Wallet: *{balance_data['play_balance']:.2f} ETB*\n\n"
+                f"❌ ዝቅተኛ conversion: *100 Coins*\n\n"
+                f"🎮 ጨዋታ ይጫወቱ coins ይሰብስቡ!",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # Calculate how much ETB they can get
+        max_coins = (balance_data['coins'] // 100) * 100
+        etb_amount = max_coins / 100
+        
         await message.answer(
             f"💲 *Convert Bonus*\n\n"
             f"🪙 ያሎት Coins: *{balance_data['coins']}*\n"
-            f"🎮 Play Wallet: *{balance_data['play_balance']:.2f} ETB*\n\n"
-            "100 Coins = 1 ETB Play Balance\n\n"
-            "⏳ Conversion feature coming soon!",
-            parse_mode="Markdown",
+            f"💱 Conversion Rate: *100 Coins = 1 ETB*\n\n"
+            f"✅ ማስተላለፍ የሚችሉት:\n"
+            f"🪙 *{max_coins} Coins* → 💵 *{etb_amount} ETB*\n\n"
+            f"ለማረጋገጥ ቁጥሩን ይላኩ: *{max_coins}*",
+            parse_mode="Markdown"
         )
     
     except Exception as e:
@@ -287,6 +834,43 @@ async def handle_convert_bonus(message: types.Message):
         else:
             logging.error(f"Convert bonus error: {e}")
             await message.answer("❌ Could not process request. Please try again.")
+
+
+# ── Handle Coin Conversion Amount ─────────────────────────────────────────────
+@dp.message(F.text.regexp(r'^\d+$'))
+async def handle_conversion_amount(message: types.Message):
+    """Handle when user sends a number (for coin conversion)."""
+    try:
+        coins = int(message.text)
+        telegram_id = message.from_user.id
+        
+        # Check if this is a valid conversion amount
+        if coins < 100 or coins % 100 != 0:
+            return  # Not a conversion request, ignore
+        
+        # Try to convert via API
+        result = await api_client.convert_bonus(
+            telegram_id=telegram_id,
+            coins=coins
+        )
+        
+        await message.answer(
+            f"✅ *Conversion ተሳክቷል!*\n\n"
+            f"🪙 Coins converted: *{result['coins_converted']}*\n"
+            f"💵 ETB added: *{result['etb_added']}*\n\n"
+            f"📊 *አዲስ Balance:*\n"
+            f"🪙 Coins: *{result['new_coins']}*\n"
+            f"🎮 Play Wallet: *{result['new_play_balance']:.2f} ETB*",
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        # Silently fail if not a conversion (might be other numeric input)
+        if "Insufficient coins" in str(e):
+            await message.answer(
+                "❌ በቂ coins የለዎትም።"
+            )
+        # Otherwise ignore (might be deposit amount, etc.)
 
 
 # ── Contact Support ───────────────────────────────────────────────────────────
@@ -321,12 +905,36 @@ async def handle_instruction(message: types.Message):
 
 
 # ── Catch-all ─────────────────────────────────────────────────────────────────
-@dp.message()
-async def catch_all(message: types.Message):
+@dp.message(Command("cancel"))
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    """Cancel any ongoing operation."""
+    current_state = await state.get_state()
+    if current_state is None:
+        await message.answer("ምንም የሚሰረዝ operation የለም።")
+        return
+    
+    await state.clear()
     await message.answer(
-        "🤷 ያዘዙትን አላወቅሁም። ከታች ያለውን ሜኑ ይጠቀሙ።",
-        reply_markup=get_main_menu_kb(),
+        "❌ Operation ተሰርዟል።",
+        reply_markup=get_main_menu_kb()
     )
+
+
+@dp.message()
+async def catch_all(message: types.Message, state: FSMContext):
+    """Catch-all handler - check if in FSM state."""
+    current_state = await state.get_state()
+    
+    if current_state:
+        await message.answer(
+            "❌ ያልተጠበቀ input።\n"
+            "ለመሰረዝ /cancel ይጫኑ።"
+        )
+    else:
+        await message.answer(
+            "🤷 ያዘዙትን አላወቅሁም። ከታች ያለውን ሜኑ ይጠቀሙ።",
+            reply_markup=get_main_menu_kb(),
+        )
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

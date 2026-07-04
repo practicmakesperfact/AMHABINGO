@@ -125,3 +125,88 @@ class LeaderboardEntry(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+# Transfer Schemas
+class TransferCreate(BaseModel):
+    sender_telegram_id: int
+    receiver_telegram_id: int
+    amount: float = Field(..., gt=0)
+    notes: Optional[str] = None
+
+class TransferResponse(BaseModel):
+    transfer_id: int
+    sender_telegram_id: int
+    receiver_telegram_id: int
+    amount: float
+    status: str
+    sender_new_balance: float
+    receiver_new_balance: float
+    created_at: datetime
+    message: str
+
+
+# Referral Schemas
+class ReferralCreate(BaseModel):
+    referrer_telegram_id: int
+    referee_telegram_id: int
+
+class ReferralResponse(BaseModel):
+    referral_id: int
+    referrer_telegram_id: int
+    referee_telegram_id: int
+    reward_amount: float
+    status: str
+    referrer_new_balance: float
+    created_at: datetime
+    message: str
+
+
+# Payment Account Schemas
+class PaymentAccountCreate(BaseModel):
+    account_name: str
+    account_holder: str
+    phone_number: str
+    payment_method: str = "telebirr"
+    is_active: bool = True
+    priority: int = 1
+    daily_limit: Optional[float] = None
+    notes: Optional[str] = None
+
+class PaymentAccountUpdate(BaseModel):
+    account_name: Optional[str] = None
+    account_holder: Optional[str] = None
+    phone_number: Optional[str] = None
+    is_active: Optional[bool] = None
+    priority: Optional[int] = None
+    daily_limit: Optional[float] = None
+    notes: Optional[str] = None
+
+class PaymentAccountResponse(BaseModel):
+    id: int
+    account_name: str
+    account_holder: str
+    phone_number: str
+    payment_method: str
+    is_active: bool
+    priority: int
+    daily_limit: Optional[float]
+    notes: Optional[str]
+    
+    class Config:
+        from_attributes = True
+
+
+# Bonus Conversion Schemas
+class BonusConvertRequest(BaseModel):
+    telegram_id: int
+    coins: int = Field(..., gt=0)
+
+class BonusConvertResponse(BaseModel):
+    telegram_id: int
+    coins_converted: int
+    etb_added: float
+    new_play_balance: float
+    new_coins: int
+    conversion_rate: int  # e.g., 100 coins = 1 ETB
+    message: str

@@ -4,7 +4,7 @@ from sqlalchemy import select, func, desc
 from typing import Optional, List
 from ..database import get_db
 from ..models import User, Leaderboard, Transaction
-from ..schemas import UserResponse, UserCreate, LeaderboardEntry
+from ..schemas import UserResponse, UserCreate, LeaderboardEntry, BonusConvertRequest, BonusConvertResponse
 from ..auth import extract_user_from_init_data
 
 router = APIRouter(prefix="/api/users", tags=["users"])
@@ -366,3 +366,82 @@ async def get_user_history(
                 "joined_at": p.joined_at.isoformat() if p.joined_at else None,
             })
     return history
+
+
+# ─── Convert Bonus (Coins to ETB) ─────────────────────────────────────────────
+@router.post("/bonus/convert", response_model=BonusConvertResponse)
+async def convert_bonus(
+    request: BonusConvertRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Convert coins to play balance.
+    Default rate: 100 coins = 1 ETB play balance.
+    For bot operations (telegram_id based).
+    """
+    from ..config import get_settings
+    settings = get_settings()
+    
+    # Get user by telegram_id
+    result = await db.execute(select(User).where(User.telegram_id == request.telegram_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Validate coin amount
+    if request.coins <= 0:
+        raise HTTPException(status_code=400, detail="Coins must be positive")
+    
+    # Minimum conversion: 100 coins
+    if request.coins < 100:
+        raise HTTPException(status_code=400, detail="Minimum conversion is 100 coins")
+    
+    # Check if user has enough coins
+    if user.coins < request.coins:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient coins. You have {user.coins} coins"
+        )
+    
+    # Calculate conversion (100 coins = 1 ETB)
+    conversion_rate = settings.COIN_TO_ETB_RATE  # 100
+    etb_amount = request.coins / conversion_rate
+    
+    # Update user
+    user.coins -= request.coins
+    user.play_balance += etb_amount
+    
+    # Create transaction
+    transaction = Transaction(
+        user_id=user.id,
+        type="bonus_conversion",
+        amount=etb_amount,
+        balance_after=user.play_balance,
+        description=f"Converted {request.coins} coins to {etb_amount} ETB",
+        reference=f"CONV-{user.id}-{user.created_at.strftime('%Y%m%d%H%M%S')}"
+    )
+    db.add(transaction)
+    
+    # Notify user
+    from ..models import Notification
+    notification = Notification(
+        user_id=user.id,
+        type="bonus_converted",
+        title="Bonus Converted 💲",
+        message=f"You converted {request.coins} coins to {etb_amount} ETB play balance!",
+        is_read=False
+    )
+    db.add(notification)
+    
+    await db.commit()
+    await db.refresh(user)
+    
+    return BonusConvertResponse(
+        telegram_id=request.telegram_id,
+        coins_converted=request.coins,
+        etb_added=etb_amount,
+        new_play_balance=user.play_balance,
+        new_coins=user.coins,
+        conversion_rate=conversion_rate,
+        message=f"Successfully converted {request.coins} coins to {etb_amount} ETB"
+    )

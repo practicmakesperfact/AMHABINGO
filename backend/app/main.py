@@ -9,7 +9,7 @@ import time
 from .config import get_settings
 from .database import engine, Base, AsyncSessionLocal
 from .redis_client import redis_client
-from .routers import user, game, payment, deposits, withdrawals
+from .routers import user, game, payment, deposits, withdrawals, transfers, referrals, payment_accounts
 import json
 
 settings = get_settings()
@@ -127,6 +127,9 @@ app.include_router(game.router)
 app.include_router(payment.router)
 app.include_router(deposits.router)
 app.include_router(withdrawals.router)
+app.include_router(transfers.router)
+app.include_router(referrals.router)
+app.include_router(payment_accounts.router)
 
 
 # ── Health & Keep-alive endpoints ─────────────────────────────────────────────
