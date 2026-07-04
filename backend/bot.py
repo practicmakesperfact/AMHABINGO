@@ -84,14 +84,12 @@ async def cmd_start(message: types.Message):
     Handles referrals if user comes from referral link.
     Format: /start ref_123456789
     """
-    # AMHABINGO Banner (using Unicode box drawing and emojis)
+    # AMHABINGO Banner - Simple and clean
     banner = (
-        "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n"
-        "┃                                                           ┃\n"
-        "┃         🇪🇹  AMHABINGO  🇪🇹         ┃\n"
-        "┃     የኢትዮጵያ #1 Bingo Game!      ┃\n"
-        "┃                                                           ┃\n"
-        "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "🇪🇹  *AMHABINGO*  🇪🇹\n"
+        "የኢትዮጵያ #1 Bingo Game!\n"
+        "━━━━━━━━━━━━━━━━━━━━━"
     )
     
     # Check if this is a referral
