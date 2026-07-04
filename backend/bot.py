@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import traceback
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -17,7 +18,13 @@ from telebirr_parser import TelebirrParser
 
 settings = get_settings()
 
-logging.basicConfig(level=logging.INFO)
+# Configure comprehensive logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 bot = Bot(token=settings.BOT_TOKEN)
 dp = Dispatcher()
 
@@ -31,7 +38,48 @@ CHANNEL = "@amhabingo"
 GROUP   = "@amhabingosupport_team"
 
 
-# ── FSM States ────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# PERSISTENT MAIN MENU KEYBOARD - SINGLE SOURCE OF TRUTH
+# ══════════════════════════════════════════════════════════════════════════════
+
+def create_main_menu() -> ReplyKeyboardMarkup:
+    """
+    Create the main menu keyboard that stays visible at all times.
+    This is the ONLY keyboard used throughout the bot for consistency.
+    """
+    webapp_url = settings.FRONTEND_URL
+    
+    # Telegram Web Apps require HTTPS
+    if webapp_url and webapp_url.startswith("https://"):
+        play_btn = KeyboardButton(text="🎮 Play", web_app=WebAppInfo(url=webapp_url))
+    else:
+        play_btn = KeyboardButton(text="🎮 Play")
+    
+    keyboard = [
+        [play_btn, KeyboardButton(text="📝 Register", request_contact=True)],
+        [KeyboardButton(text="💵 Check Balance"), KeyboardButton(text="💰 Deposit")],
+        [KeyboardButton(text="☎️ Contact Support"), KeyboardButton(text="📖 Instruction")],
+        [KeyboardButton(text="🎁 Transfer"), KeyboardButton(text="💸 Withdraw")],
+        [KeyboardButton(text="🔗 Invite"), KeyboardButton(text="💱 Convert Bonus")],
+    ]
+    
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+        is_persistent=True,
+        one_time_keyboard=False,
+        input_field_placeholder="Choose an option..."
+    )
+
+
+# Global persistent keyboard instance
+MAIN_MENU = create_main_menu()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FSM STATES
+# ══════════════════════════════════════════════════════════════════════════════
+
 class DepositStates(StatesGroup):
     """FSM states for deposit flow."""
     waiting_for_amount = State()
@@ -51,89 +99,107 @@ class TransferStates(StatesGroup):
     waiting_for_amount = State()
     waiting_for_confirmation = State()
 
-# ── Keyboards ─────────────────────────────────────────────────────────────────
-def get_main_menu_kb():
-    """Main menu with full keyboard layout like Beteseb Bingo."""
-    webapp_url = settings.FRONTEND_URL
 
-    # Telegram Web Apps require HTTPS
-    if webapp_url.startswith("http://"):
-        webapp_url = None
+# ══════════════════════════════════════════════════════════════════════════════
+# MIDDLEWARE - LOG ALL UPDATES
+# ══════════════════════════════════════════════════════════════════════════════
 
-    play_btn = (
-        KeyboardButton(text="Play 🎮", web_app=WebAppInfo(url=webapp_url))
-        if webapp_url
-        else KeyboardButton(text="Play 🎮")
-    )
-
-    kb = [
-        [play_btn,                                 KeyboardButton(text="Register 📋", request_contact=True)],
-        [KeyboardButton(text="Check Balance 💵"),  KeyboardButton(text="Deposit 💰")],
-        [KeyboardButton(text="Contact Support ☎️"),KeyboardButton(text="Instruction 📖")],
-        [KeyboardButton(text="Transfer 🎁"),        KeyboardButton(text="Withdraw 🤑")],
-        [KeyboardButton(text="Invite 🔗"),          KeyboardButton(text="Convert Bonus 💲")],
-    ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+@dp.update.outer_middleware()
+async def log_all_updates(handler, event, data):
+    """Log every incoming update for debugging and monitoring."""
+    try:
+        logger.info(f"📨 Incoming update: {event}")
+        return await handler(event, data)
+    except Exception as e:
+        logger.error(f"❌ Error in update handler: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        raise
 
 
-# ── /start ────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# /START COMMAND - ALWAYS RESPONDS
+# ══════════════════════════════════════════════════════════════════════════════
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     """
-    Start command - shows AMHABINGO banner with full keyboard.
+    Start command - MUST always respond.
     Handles referrals if user comes from referral link.
     Format: /start ref_123456789
     """
-    # AMHABINGO Banner - Simple and clean
-    banner = (
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "🇪🇹  *AMHABINGO*  🇪🇹\n"
-        "የኢትዮጵያ #1 Bingo Game!\n"
-        "━━━━━━━━━━━━━━━━━━━━━"
-    )
-    
-    # Check if this is a referral
-    referral_message = ""
-    if message.text and len(message.text.split()) > 1:
-        args = message.text.split()[1]
-        if args.startswith("ref_"):
-            referrer_id = int(args.replace("ref_", ""))
-            referee_id = message.from_user.id
-            
-            # Don't process if user refers themselves
-            if referrer_id != referee_id:
+    try:
+        logger.info(f"🚀 /start command from user {message.from_user.id}")
+        
+        # AMHABINGO Banner
+        banner = (
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "🇪🇹  *AMHABINGO*  🇪🇹\n"
+            "የኢትዮጵያ #1 Bingo Game!\n"
+            "━━━━━━━━━━━━━━━━━━━━━"
+        )
+        
+        # Check if this is a referral
+        referral_message = ""
+        if message.text and len(message.text.split()) > 1:
+            args = message.text.split()[1]
+            if args.startswith("ref_"):
                 try:
-                    # Create referral (will reward referrer)
-                    await api_client.create_referral(
-                        referrer_telegram_id=referrer_id,
-                        referee_telegram_id=referee_id
-                    )
-                    referral_message = "\n🎁 *የ Referral Bonus ተመዝግቧል!*\n✅ አጋዥዎ 5 ETB ያገኛል!\n"
+                    referrer_id = int(args.replace("ref_", ""))
+                    referee_id = message.from_user.id
+                    
+                    # Don't process if user refers themselves
+                    if referrer_id != referee_id:
+                        logger.info(f"🎁 Processing referral: {referrer_id} → {referee_id}")
+                        await api_client.create_referral(
+                            referrer_telegram_id=referrer_id,
+                            referee_telegram_id=referee_id
+                        )
+                        referral_message = "\n🎁 *የ Referral Bonus ተመዝግቧል!*\n✅ አጋዥዎ 5 ETB ያገኛል!\n"
+                        logger.info(f"✅ Referral created successfully")
+                except ValueError as e:
+                    logger.error(f"❌ Invalid referrer ID: {e}")
                 except Exception as e:
-                    # Referral might already exist or other error
-                    logging.warning(f"Referral creation failed: {e}")
-    
-    # Welcome message with banner
-    welcome_text = (
-        f"{banner}\n\n"
-        f"{referral_message}"
-        f"👋 *እንኳን ደህና መጡ!*\n\n"
-        f"🎮 Real-time Bingo ጨዋታ!\n"
-        f"💰 ይጫወቱ እና ያሸንፉ!\n"
-        f"🇪🇹 100% Ethiopian!\n\n"
-        f"📋 *የመጀመሪያ ደረጃ:*\n"
-        f"1️⃣ *Register 📋* ይጫኑ\n"
-        f"2️⃣ *Deposit 💰* ያድርጉ\n"
-        f"3️⃣ *Play 🎮* ይጫወቱ!\n\n"
-        f"📢 Channel: {CHANNEL}\n"
-        f"👥 Support: {GROUP}"
-    )
-    
-    await message.answer(
-        welcome_text,
-        reply_markup=get_main_menu_kb(),
-        parse_mode="Markdown",
-    )
+                    logger.error(f"❌ Referral creation failed: {e}")
+                    logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        # Welcome message
+        welcome_text = (
+            f"{banner}\n\n"
+            f"{referral_message}"
+            f"👋 *እንኳን ደህና መጡ!*\n\n"
+            f"🎮 Real-time Bingo ጨዋታ!\n"
+            f"💰 ይጫወቱ እና ያሸንፉ!\n"
+            f"🇪🇹 100% Ethiopian!\n\n"
+            f"📋 *የመጀመሪያ ደረጃ:*\n"
+            f"1️⃣ *📝 Register* ይጫኑ\n"
+            f"2️⃣ *💰 Deposit* ያድርጉ\n"
+            f"3️⃣ *🎮 Play* ይጫወቱ!\n\n"
+            f"📢 Channel: {CHANNEL}\n"
+            f"👥 Support: {GROUP}"
+        )
+        
+        await message.answer(
+            welcome_text,
+            reply_markup=MAIN_MENU,
+            parse_mode="Markdown",
+        )
+        logger.info(f"✅ /start response sent successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ CRITICAL ERROR in /start handler: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        # Always send a response, even if initialization fails
+        try:
+            await message.answer(
+                "⚠️ *Sorry, something went wrong!*\n\n"
+                "Please try again or contact support:\n"
+                f"👥 {GROUP}",
+                reply_markup=MAIN_MENU,
+                parse_mode="Markdown"
+            )
+        except Exception as fallback_error:
+            logger.error(f"❌ Even fallback response failed: {fallback_error}")
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────
