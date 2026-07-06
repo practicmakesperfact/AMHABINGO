@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import traceback
+import httpx
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -228,15 +229,37 @@ async def handle_contact(message: types.Message):
     """
     Register user via contact share.
     NOW USES API instead of direct database access! ✅
+    COMPREHENSIVE ERROR HANDLING - Never fails silently!
     """
-    contact = message.contact
-    if not contact:
-        return
-
-    telegram_id  = contact.user_id if contact.user_id else message.from_user.id
-    phone_number = contact.phone_number
-
     try:
+        contact = message.contact
+        if not contact:
+            logger.warning("❌ No contact in message")
+            await message.answer(
+                "❌ *Registration Error*\n\n"
+                "የእውቂያ መረጃ አልተገኘም።\n"
+                "እባክዎን የ *📝 Register* ቁልፉን ይጫኑ።",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU,
+            )
+            return
+
+        telegram_id  = contact.user_id if contact.user_id else message.from_user.id
+        phone_number = contact.phone_number
+
+        if not phone_number:
+            logger.error("❌ No phone number in contact")
+            await message.answer(
+                "❌ *Registration Error*\n\n"
+                "የስልክ ቁጥር አልተገኘም።\n"
+                "እባክዎን የ *📝 Register* ቁልፉን እንደገና ይጫኑ።",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU,
+            )
+            return
+
+        logger.info(f"📝 Registering user: telegram_id={telegram_id}, phone={phone_number}")
+
         # Call FastAPI endpoint (Bot → API → Database)
         user = await api_client.register_user(
             telegram_id=telegram_id,
@@ -246,40 +269,98 @@ async def handle_contact(message: types.Message):
             last_name=message.from_user.last_name
         )
 
+        logger.info(f"✅ Registration successful for user {telegram_id}")
+
         # Check if this was a new registration or update
         if user.get('play_balance', 0) == 10.0 and user.get('games_played', 0) == 0:
             # New user
             await message.answer(
-                "🎉 ✅ Player registered successfully!\n\n"
-                "✨ አዲስ መረጃዎቸን እንዲደርሱት ቻናልችንን እና ግሩፓችንን ይቀላቀሉ።\n\n"
+                "🎉 ✅ *እንኳን ደስ አሎት!*\n\n"
+                "በተሳካ ሁኔታ ተመዝግበዋል!\n\n"
+                "✨ አዲስ መረጃዎች እንዲደርሱዎት ቻናልችንን እና ግሩፓችንን ይቀላቀሉ።\n\n"
                 f"📢 Channel: {CHANNEL}\n"
                 f"👥 Group: {GROUP}\n\n"
                 "🎁 *10 ETB* ቦነስ Play Wallet ላይ ተጨምሯል!\n"
-                "👉 *Play 🎮* ይጫኑ ጨዋታ ለመጀምር!",
+                "👉 *🎮 Play* ይጫኑ ጨዋታ ለመጀምር!",
                 parse_mode="Markdown",
-                reply_markup=get_main_menu_kb(),
+                reply_markup=MAIN_MENU,
             )
         else:
             # Existing user
             await message.answer(
-                "✅ ቀደም ብለው ተመዝግበዋል!\n\n"
+                "✅ *ቀደም ብለው ተመዝግበዋል!*\n\n"
                 f"💰 Main Wallet: *{user.get('balance', 0):.2f} ETB*\n"
                 f"🎮 Play Wallet: *{user.get('play_balance', 0):.2f} ETB*\n\n"
-                "👉 *Play 🎮* ይጫኑ ጨዋታ ለመጀምር!",
+                "👉 *🎮 Play* ይጫኑ ጨዋታ ለመጀምር!",
                 parse_mode="Markdown",
-                reply_markup=get_main_menu_kb(),
+                reply_markup=MAIN_MENU,
             )
 
-    except Exception as e:
-        logging.error(f"Registration error: {e}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ HTTP error during registration: {e.response.status_code}")
+        logger.error(f"📋 Response body: {e.response.text}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        if e.response.status_code == 400:
+            await message.answer(
+                "❌ *Registration Error*\n\n"
+                "የተሰጠው መረጃ ትክክል አይደለም።\n"
+                "እባክዎን እንደገና ይሞክሩ።",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU,
+            )
+        elif e.response.status_code == 409:
+            await message.answer(
+                "✅ *ቀደም ብለው ተመዝግበዋል!*\n\n"
+                "የእርስዎ መረጃ በስርዓታችን ውስጥ አለ።\n"
+                "👉 *💵 Check Balance* ይጫኑ።",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU,
+            )
+        elif e.response.status_code == 503:
+            await message.answer(
+                "❌ *Service Unavailable*\n\n"
+                "Database connection failed.\n"
+                f"እባክዎን support ያናግሩ: {GROUP}",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU,
+            )
+        else:
+            await message.answer(
+                "❌ *Registration Error*\n\n"
+                f"Server error ({e.response.status_code}).\n"
+                f"እባክዎን support ያናግሩ: {GROUP}",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU,
+            )
+    
+    except httpx.RequestError as e:
+        logger.error(f"❌ Network error during registration: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
         await message.answer(
-            "❌ Registration failed. Please try again or contact support.",
-            reply_markup=get_main_menu_kb(),
+            "❌ *Connection Error*\n\n"
+            "Could not connect to server.\n"
+            "እባክዎን እንደገና ይሞክሩ።\n\n"
+            f"Support: {GROUP}",
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU,
+        )
+    
+    except Exception as e:
+        logger.error(f"❌ Unexpected registration error: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        await message.answer(
+            "❌ *Internal Error*\n\n"
+            "Unexpected error occurred.\n"
+            "እባክዎን support ያናግሩ።\n\n"
+            f"Support: {GROUP}",
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU,
         )
 
 
 # ── Check Balance ─────────────────────────────────────────────────────────────
-@dp.message(F.text == "Check Balance 💵")
+@dp.message(F.text == "💵 Check Balance")
 async def check_balance(message: types.Message):
     """
     Check user balance via API.
@@ -314,7 +395,7 @@ async def check_balance(message: types.Message):
 
 
 # ── Deposit ───────────────────────────────────────────────────────────────────
-@dp.message(F.text == "Deposit 💰")
+@dp.message(F.text == "💰 Deposit")
 async def handle_deposit(message: types.Message, state: FSMContext):
     """Start deposit flow - ask for amount."""
     await message.answer(
@@ -465,7 +546,7 @@ async def deposit_receipt_received(message: types.Message, state: FSMContext):
 
 
 # ── Withdraw ──────────────────────────────────────────────────────────────────
-@dp.message(F.text == "Withdraw 🤑")
+@dp.message(F.text == "💸 Withdraw")
 async def handle_withdraw(message: types.Message, state: FSMContext):
     """
     Start withdrawal flow - check balance and ask for amount.
@@ -596,7 +677,7 @@ async def withdrawal_confirmation_received(message: types.Message, state: FSMCon
     if text == "ዋጋ" or text == "cancel":
         await message.answer(
             "❌ Withdrawal ተሰርዟል።",
-            reply_markup=get_main_menu_kb()
+            reply_markup=MAIN_MENU
         )
         await state.clear()
         return
@@ -633,7 +714,7 @@ async def withdrawal_confirmation_received(message: types.Message, state: FSMCon
             f"📬 Notification ይደርስዎታል\n\n"
             f"📢 Status: {CHANNEL}",
             parse_mode="Markdown",
-            reply_markup=get_main_menu_kb()
+            reply_markup=MAIN_MENU
         )
         
         await state.clear()
@@ -645,20 +726,20 @@ async def withdrawal_confirmation_received(message: types.Message, state: FSMCon
         if "Insufficient balance" in error_msg:
             await message.answer(
                 "❌ በቂ ሒሳብ የለዎትም።",
-                reply_markup=get_main_menu_kb()
+                reply_markup=MAIN_MENU
             )
         else:
             await message.answer(
                 "❌ Withdrawal መጠየቅ አልተቻለም።\n"
                 "እባክዎን እንደገና ይሞክሩ።",
-                reply_markup=get_main_menu_kb()
+                reply_markup=MAIN_MENU
             )
         
         await state.clear()
 
 
 # ── Transfer ──────────────────────────────────────────────────────────────────
-@dp.message(F.text == "Transfer 🎁")
+@dp.message(F.text == "🎁 Transfer")
 async def handle_transfer(message: types.Message, state: FSMContext):
     """Start transfer flow - ask for receiver telegram ID."""
     await message.answer(
@@ -783,7 +864,7 @@ async def transfer_confirmation_received(message: types.Message, state: FSMConte
     if text == "ዋጋ" or text == "cancel":
         await message.answer(
             "❌ Transfer ተሰርዟል።",
-            reply_markup=get_main_menu_kb()
+            reply_markup=MAIN_MENU
         )
         await state.clear()
         return
@@ -817,7 +898,7 @@ async def transfer_confirmation_received(message: types.Message, state: FSMConte
             f"💵 አዲስ ሒሳብ: *{result['sender_new_balance']} ETB*\n\n"
             f"📬 ተቀባዩ notification ተቀብሏል።",
             parse_mode="Markdown",
-            reply_markup=get_main_menu_kb()
+            reply_markup=MAIN_MENU
         )
         
         await state.clear()
@@ -826,13 +907,13 @@ async def transfer_confirmation_received(message: types.Message, state: FSMConte
         logging.error(f"Transfer execution error: {e}")
         await message.answer(
             f"❌ Transfer አልተሳካም።\n{str(e)}",
-            reply_markup=get_main_menu_kb()
+            reply_markup=MAIN_MENU
         )
         await state.clear()
 
 
 # ── Invite ────────────────────────────────────────────────────────────────────
-@dp.message(F.text == "Invite 🔗")
+@dp.message(F.text == "🔗 Invite")
 async def handle_invite(message: types.Message):
     """Generate referral link for user."""
     bot_info  = await bot.get_me()
@@ -870,7 +951,7 @@ async def handle_invite(message: types.Message):
 
 
 # ── Convert Bonus ─────────────────────────────────────────────────────────────
-@dp.message(F.text == "Convert Bonus 💲")
+@dp.message(F.text == "💱 Convert Bonus")
 async def handle_convert_bonus(message: types.Message):
     """
     Convert bonus handler - checks coins via API.
@@ -956,7 +1037,7 @@ async def handle_conversion_amount(message: types.Message):
 
 
 # ── Contact Support ───────────────────────────────────────────────────────────
-@dp.message(F.text == "Contact Support ☎️")
+@dp.message(F.text == "☎️ Contact Support")
 async def handle_support(message: types.Message):
     await message.answer(
         "☎️ *Contact Support*\n\n"
@@ -969,7 +1050,7 @@ async def handle_support(message: types.Message):
 
 
 # ── Instruction ───────────────────────────────────────────────────────────────
-@dp.message(F.text == "Instruction 📖")
+@dp.message(F.text == "📖 Instruction")
 async def handle_instruction(message: types.Message):
     await message.answer(
         "📖 *AMHABINGO — አጫወት ስልት*\n\n"
@@ -998,7 +1079,7 @@ async def cmd_cancel(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "❌ Operation ተሰርዟል።",
-        reply_markup=get_main_menu_kb()
+        reply_markup=MAIN_MENU
     )
 
 
@@ -1015,7 +1096,7 @@ async def catch_all(message: types.Message, state: FSMContext):
     else:
         await message.answer(
             "🤷 ያዘዙትን አላወቅሁም። ከታች ያለውን ሜኑ ይጠቀሙ።",
-            reply_markup=get_main_menu_kb(),
+            reply_markup=MAIN_MENU,
         )
 
 
