@@ -1,5 +1,8 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
+// Export for admin pages
+export const API_BASE_URL = API_URL;
+
 // How long to wait for a single request before giving up (ms)
 const REQUEST_TIMEOUT_MS = 15_000;
 
