@@ -363,35 +363,86 @@ async def handle_contact(message: types.Message):
 @dp.message(F.text == "💵 Check Balance")
 async def check_balance(message: types.Message):
     """
-    Check user balance via API.
+    Check user balance via API - Professional Account Info format.
     NOW USES API instead of direct database access! ✅
     """
     telegram_id = message.from_user.id
     
     try:
+        logger.info(f"💵 Balance check requested by user {telegram_id}")
+        
         # Call FastAPI endpoint (Bot → API → Database)
         balance_data = await api_client.get_user_balance(telegram_id)
         
+        # Get user info from API response
+        username = balance_data.get('first_name') or balance_data.get('username') or message.from_user.first_name or "Player"
+        phone = balance_data.get('phone_number', 'N/A')
+        
+        # Format phone number (remove +251 prefix if present)
+        if phone and phone.startswith('+251'):
+            phone = '0' + phone[4:]
+        
+        # Professional Account Info format with copyable code block
+        account_info = (
+            f"� *Account Info*\n\n"
+            f"```\n"
+            f"Name:          {username}\n"
+            f"Phone:         {phone}\n"
+            f"Main wallet:   {balance_data['balance']:.1f}\n"
+            f"Play wallet:   {balance_data['play_balance']:.1f}\n"
+            f"Coin:          {balance_data['coins']}\n"
+            f"```"
+        )
+        
         await message.answer(
-            f"💰 *የሒሳብ ቀሪ*\n\n"
-            f"🏦 Main Wallet: *{balance_data['balance']:.2f} ETB*\n"
-            f"🎮 Play Wallet: *{balance_data['play_balance']:.2f} ETB*\n"
-            f"🪙 Coins: *{balance_data['coins']}*\n"
-            f"💵 Total: *{balance_data['total']:.2f} ETB*",
+            account_info,
             parse_mode="Markdown",
+            reply_markup=MAIN_MENU
+        )
+        
+        logger.info(f"✅ Balance sent successfully to user {telegram_id}")
+    
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ HTTP error during balance check: {e.response.status_code}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        if e.response.status_code == 404:
+            await message.answer(
+                "❌ *ተመዝግበው አልቀረቡም።*\n\n"
+                "እባክዎን *📝 Register* ቁልፉን ይጫኑ።",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU
+            )
+        else:
+            await message.answer(
+                "❌ *Service Error*\n\n"
+                f"Could not fetch balance (Error {e.response.status_code}).\n"
+                f"እባክዎን support ያናግሩ: {GROUP}",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU
+            )
+    
+    except httpx.RequestError as e:
+        logger.error(f"❌ Network error during balance check: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        await message.answer(
+            "❌ *Connection Error*\n\n"
+            "Could not connect to server.\n"
+            "እባክዎን እንደገና ይሞክሩ።",
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU
         )
     
     except Exception as e:
-        if "404" in str(e):
-            await message.answer(
-                "❌ ተመዝግበው አልቀረቡም። *Register 📋* ይጫኑ ።",
-                parse_mode="Markdown",
-            )
-        else:
-            logging.error(f"Balance check error: {e}")
-            await message.answer(
-                "❌ Could not fetch balance. Please try again.",
-            )
+        logger.error(f"❌ Unexpected balance check error: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        await message.answer(
+            "❌ *Error*\n\n"
+            "Could not fetch balance. Please try again.\n"
+            f"Support: {GROUP}",
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU
+        )
 
 
 # ── Deposit ───────────────────────────────────────────────────────────────────

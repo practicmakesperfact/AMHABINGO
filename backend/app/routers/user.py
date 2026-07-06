@@ -76,13 +76,16 @@ async def get_user_by_telegram_id(telegram_id: int, db: AsyncSession = Depends(g
 # ─── Get User Balance by Telegram ID ──────────────────────────────────────────
 @router.get("/by-telegram/{telegram_id}/balance")
 async def get_user_balance_by_telegram_id(telegram_id: int, db: AsyncSession = Depends(get_db)):
-    """Get balance by telegram_id (for bot operations)."""
+    """Get balance by telegram_id (for bot operations) - includes user info."""
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return {
         "telegram_id": telegram_id,
+        "phone_number": user.phone_number,
+        "username": user.username,
+        "first_name": user.first_name,
         "balance": user.balance,
         "play_balance": user.play_balance,
         "coins": user.coins,
