@@ -448,22 +448,42 @@ async def check_balance(message: types.Message):
 # ── Deposit ───────────────────────────────────────────────────────────────────
 @dp.message(F.text == "💰 Deposit")
 async def handle_deposit(message: types.Message, state: FSMContext):
-    """Start deposit flow - ask for amount."""
-    await message.answer(
-        "💰 *Deposit — ገንዘብ ይጨምሩ*\n\n"
-        "ምን ያህል ገንዘብ deposit ማድረግ ይፈልጋሉ?\n"
-        "ዝቅተኛ deposit: *10 ETB*\n\n"
-        "የገንዘብ መጠኑን ይላኩ (ምሳሌ: 100)",
-        parse_mode="Markdown",
-    )
-    await state.set_state(DepositStates.waiting_for_amount)
+    """Start deposit flow - ask for amount with professional format."""
+    try:
+        logger.info(f"💰 Deposit requested by user {message.from_user.id}")
+        
+        await message.answer(
+            "💰 *Deposit — ገንዘብ ይጨምሩ*\n\n"
+            "ምን ያህል ገንዘብ deposit ማድረግ ይፈልጋሉ?\n"
+            "ዝቅተኛ deposit: *10 ETB*\n\n"
+            "የገንዘብ መጠኑን ይላኩ (ምሳሌ: 100)",
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU
+        )
+        await state.set_state(DepositStates.waiting_for_amount)
+        
+    except Exception as e:
+        logger.error(f"❌ Error starting deposit: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        await message.answer(
+            "❌ ችግር ተፈጥሯል። እባክዎን እንደገና ይሞክሩ።",
+            reply_markup=MAIN_MENU
+        )
 
 
 @dp.message(DepositStates.waiting_for_amount)
 async def deposit_amount_received(message: types.Message, state: FSMContext):
-    """User entered deposit amount."""
+    """User entered deposit amount - send professional payment instructions."""
     try:
-        amount = float(message.text)
+        # Validate amount
+        try:
+            amount = float(message.text.strip())
+        except ValueError:
+            await message.answer(
+                "❌ እባክዎን ትክክለኛ ቁጥር ያስገቡ።\n"
+                "ምሳሌ: 100"
+            )
+            return
         
         if amount < 10:
             await message.answer(
@@ -471,6 +491,8 @@ async def deposit_amount_received(message: types.Message, state: FSMContext):
                 "እባክዎን ከ10 ETB በላይ ያስገቡ።"
             )
             return
+        
+        logger.info(f"💰 Creating deposit for user {message.from_user.id}: {amount} ETB")
         
         # Create deposit via API
         telegram_id = message.from_user.id
@@ -482,8 +504,11 @@ async def deposit_amount_received(message: types.Message, state: FSMContext):
         # Get payment account
         payment_accounts = await api_client.get_payment_accounts()
         if not payment_accounts:
+            logger.error("❌ No payment accounts available")
             await message.answer(
-                "❌ የክፍያ መረጃ አልተገኘም። እባክዎን support ያናግሩ።"
+                "❌ የክፍያ መረጃ አልተገኘም።\n"
+                f"እባክዎን support ያናግሩ: {GROUP}",
+                reply_markup=MAIN_MENU
             )
             await state.clear()
             return
@@ -499,67 +524,107 @@ async def deposit_amount_received(message: types.Message, state: FSMContext):
             account_holder=account['account_holder']
         )
         
-        # Send payment instructions (your format)
+        # Format phone (remove +251 prefix)
+        phone_display = account['phone_number']
+        if phone_display.startswith('+251'):
+            phone_display = '0' + phone_display[4:]
+        
+        # Professional payment instructions matching the template
+        payment_instructions = (
+            f"💰 *ማስገባት የሚፈልጓትን መጠን h10 ብር ጀምሮ ያስገቡ።*\n\n"
+            f"የሚያጋጥማቹሁ የክፍያ ችግር:\n"
+            f"{GROUP} ላይ ነፃልን።\n\n"
+            f"1. ካታች ባለው የቴሌብር አካውንት {amount:.0f} ብር ያስገቡ።\n\n"
+            f"   *Phone:* `{phone_display}`\n\n"
+            f"2. የከፈሉበትን አጭር የፁሁፍ መልዕክት (message) copy በማድረግ እዚህ ላይ Past አድረገው ያስገቡና ይላኩት 👇👇👇"
+        )
+        
         await message.answer(
-            f"💰 *ገንዘብ ማስገባት (Deposit)*\n\n"
-            f"የሚያጋጥማቹ የክፍያ ችግር: @amhabingosupport_team ላይ ፃፉልን።\n\n"
-            f"*የክፍያ መመሪያዎች:*\n\n"
-            f"1️⃣ ከታች ባለው የቴሌብር አካውንት *{amount} ብር* ያስገቡ\n"
-            f"   📱 Phone: *{account['phone_number'].replace('+251', '0')}*\n\n"
-            f"2️⃣ የከፈሉበትን አጭር የጹሁፍ መልዕክት (message) copy በማድረግ\n"
-            f"   እዚህ ላይ Past አድረገው ያስገቡና ይላኩት 👇👇👇\n\n"
-            f"📝 Reference: `{deposit['tx_ref']}`",
+            payment_instructions,
             parse_mode="Markdown"
         )
         
         await state.set_state(DepositStates.waiting_for_receipt)
+        logger.info(f"✅ Payment instructions sent to user {message.from_user.id}")
         
-    except ValueError:
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ HTTP error creating deposit: {e.response.status_code}")
+        logger.error(f"📋 Response: {e.response.text}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        if e.response.status_code == 404:
+            await message.answer(
+                "❌ ተመዝግበው አልቀረቡም።\n"
+                "እባክዎን *📝 Register* ቁልፉን ይጫኑ።",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU
+            )
+        else:
+            await message.answer(
+                f"❌ ችግር ተፈጥሯል። (Error {e.response.status_code})\n"
+                f"እባክዎን support ያናግሩ: {GROUP}",
+                reply_markup=MAIN_MENU
+            )
+        await state.clear()
+        
+    except httpx.RequestError as e:
+        logger.error(f"❌ Network error creating deposit: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
         await message.answer(
-            "❌ እባክዎን ትክክለኛ ቁጥር ያስገቡ።\n"
-            "ምሳሌ: 100"
+            "❌ Connection error.\n"
+            "እባክዎን እንደገና ይሞክሩ።",
+            reply_markup=MAIN_MENU
         )
+        await state.clear()
+    
     except Exception as e:
-        logging.error(f"Deposit creation error: {e}")
+        logger.error(f"❌ Unexpected deposit error: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
         await message.answer(
-            "❌ ችግር ተፈጥሯል። እባክዎን እንደገና ይሞክሩ።"
+            "❌ ችግር ተፈጥሯል። እባክዎን እንደገና ይሞክሩ።",
+            reply_markup=MAIN_MENU
         )
         await state.clear()
 
 
 @dp.message(DepositStates.waiting_for_receipt)
 async def deposit_receipt_received(message: types.Message, state: FSMContext):
-    """User sent Telebirr confirmation message."""
-    # Get state data
-    data = await state.get_data()
-    tx_ref = data.get('tx_ref')
-    expected_amount = data.get('amount')
-    
-    if not message.text:
-        await message.answer(
-            "❌ እባክዎን Telebirr confirmation message forward ያድርጉ።\n"
-            "ወይም የላኩትን መጠን እና transaction ID በጽሁፍ ያስገቡ።"
-        )
-        return
-    
+    """User sent Telebirr confirmation message - verify and submit."""
     try:
+        # Get state data
+        data = await state.get_data()
+        tx_ref = data.get('tx_ref')
+        expected_amount = data.get('amount')
+        
+        if not message.text:
+            await message.answer(
+                "❌ እባክዎን Telebirr confirmation message ይላኩ።\n"
+                "የከፈሉበትን መልዕክት copy በማድረግ paste ያድርጉ።"
+            )
+            return
+        
+        logger.info(f"📄 Receipt received from user {message.from_user.id}")
+        
         # Parse Telebirr message
         receipt_data = telebirr_parser.parse(message.text)
         
         if not receipt_data:
+            logger.warning(f"❌ Failed to parse receipt from user {message.from_user.id}")
             await message.answer(
                 "❌ Telebirr message ማንበብ አልተቻለም።\n\n"
                 "እባክዎን የሚከተሉትን ያረጋግጡ:\n"
-                "• Telebirr confirmation message forward አድርገዋል\n"
-                "• Message ሙሉ በሙሉ ተመርጧል\n\n"
-                "ወይም በዚህ ቅርጸት ያስገቡ:\n"
+                "• Telebirr confirmation message ሙሉ በሙሉ copy አድርገዋል\n"
+                "• Message ተሟልቶ ነው\n\n"
+                f"ወይም በዚህ ቅርጸት ያስገቡ:\n"
                 f"Amount: {expected_amount}\n"
-                f"Reference: {tx_ref}"
+                f"Reference: {tx_ref}\n\n"
+                f"Support: {GROUP}"
             )
             return
         
         # Validate amount
         if not telebirr_parser.validate_receipt(receipt_data, expected_amount):
+            logger.warning(f"❌ Amount mismatch for user {message.from_user.id}: expected {expected_amount}, got {receipt_data.get('amount')}")
             await message.answer(
                 f"❌ የገንዘብ መጠን አይመሳሰልም!\n\n"
                 f"የጠበቁት: *{expected_amount} ETB*\n"
@@ -568,6 +633,8 @@ async def deposit_receipt_received(message: types.Message, state: FSMContext):
                 parse_mode="Markdown"
             )
             return
+        
+        logger.info(f"✅ Receipt validated for user {message.from_user.id}")
         
         # Verify deposit via API
         result = await api_client.verify_deposit(
@@ -582,16 +649,42 @@ async def deposit_receipt_received(message: types.Message, state: FSMContext):
             "👨‍💼 Admin በ24 ሰዓት ውስጥ ይፈትሻል እና ያፀድቃል።\n"
             "✅ ሲፈቀድ notification ይደርስዎታል።\n\n"
             f"📢 ለበለጠ መረጃ: {CHANNEL}",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU
         )
         
         await state.clear()
+        logger.info(f"✅ Deposit submitted successfully for user {message.from_user.id}")
         
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ HTTP error verifying deposit: {e.response.status_code}")
+        logger.error(f"📋 Response: {e.response.text}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        
+        await message.answer(
+            f"❌ Receipt verification failed (Error {e.response.status_code}).\n"
+            f"እባክዎን support ያናግሩ: {GROUP}",
+            reply_markup=MAIN_MENU
+        )
+        await state.clear()
+        
+    except httpx.RequestError as e:
+        logger.error(f"❌ Network error verifying deposit: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
+        await message.answer(
+            "❌ Connection error.\n"
+            "እባክዎን እንደገና ይሞክሩ።",
+            reply_markup=MAIN_MENU
+        )
+        await state.clear()
+    
     except Exception as e:
-        logging.error(f"Receipt verification error: {e}")
+        logger.error(f"❌ Unexpected receipt error: {e}")
+        logger.error(f"📋 Traceback: {traceback.format_exc()}")
         await message.answer(
             "❌ Receipt ማረጋገጥ አልተቻለም።\n"
-            "እባክዎን እንደገና ይሞክሩ ወይም support ያናግሩ።"
+            f"እባክዎን support ያናግሩ: {GROUP}",
+            reply_markup=MAIN_MENU
         )
         await state.clear()
 
@@ -1153,16 +1246,48 @@ async def catch_all(message: types.Message, state: FSMContext):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 async def main():
-    print("🤖 Starting AMHABINGO Telegram Bot...")
-    print(f"✅ Using API client: {settings.BACKEND_URL}")
+    logger.info("🤖 Starting AMHABINGO Telegram Bot...")
+    logger.info(f"📡 Backend URL: {settings.BACKEND_URL}")
+    
+    # Wait for backend to be ready (important when running together)
+    max_retries = 10
+    retry_delay = 2
+    backend_ready = False
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"🔍 Testing backend connection (attempt {attempt}/{max_retries})...")
+            async with httpx.AsyncClient(timeout=10.0) as test_client:
+                response = await test_client.get(f"{settings.BACKEND_URL}/health")
+                if response.status_code == 200:
+                    logger.info("✅ Backend is reachable and healthy")
+                    backend_ready = True
+                    break
+                else:
+                    logger.warning(f"⚠️ Backend returned status {response.status_code}, retrying...")
+        except httpx.ConnectError as e:
+            if attempt < max_retries:
+                logger.warning(f"⚠️ Cannot connect to backend, retrying in {retry_delay}s... ({attempt}/{max_retries})")
+                await asyncio.sleep(retry_delay)
+            else:
+                logger.error(f"❌ Cannot connect to backend at {settings.BACKEND_URL} after {max_retries} attempts")
+                logger.error(f"❌ Error: {e}")
+                logger.error("⚠️ Bot will start but API calls will fail!")
+        except Exception as e:
+            logger.error(f"❌ Backend health check failed: {e}")
+            if attempt < max_retries:
+                await asyncio.sleep(retry_delay)
+    
+    if not backend_ready:
+        logger.error("❌ Backend is not ready! Bot will start but may not work correctly.")
     
     try:
-        print("🎯 Bot is now polling for updates...")
+        logger.info("🎯 Bot is now polling for updates...")
         await dp.start_polling(bot)
     finally:
         # Close API client on shutdown
         await api_client.close()
-        print("🛑 Bot stopped, API client closed")
+        logger.info("🛑 Bot stopped, API client closed")
 
 
 if __name__ == "__main__":
