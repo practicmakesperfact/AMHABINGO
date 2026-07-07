@@ -6,7 +6,11 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from aiogram.types import (
+    ReplyKeyboardMarkup, KeyboardButton, WebAppInfo,
+    InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
+    ReplyKeyboardRemove
+)
 import sys
 import os
 
@@ -43,37 +47,34 @@ GROUP   = "@amhabingosupport_team"
 # PERSISTENT MAIN MENU KEYBOARD - SINGLE SOURCE OF TRUTH
 # ══════════════════════════════════════════════════════════════════════════════
 
-def create_main_menu() -> ReplyKeyboardMarkup:
+def create_main_menu() -> InlineKeyboardMarkup:
     """
-    Create the main menu keyboard that stays visible at all times.
-    This is the ONLY keyboard used throughout the bot for consistency.
+    Create the INLINE main menu — buttons appear inside the message
+    (above the input field), matching the Beteseb Bingo UI style.
     """
     webapp_url = settings.FRONTEND_URL
-    
-    # Telegram Web Apps require HTTPS
+
+    # Play button: opens Mini App if HTTPS URL available, else callback
     if webapp_url and webapp_url.startswith("https://"):
-        play_btn = KeyboardButton(text="🎮 Play", web_app=WebAppInfo(url=webapp_url))
+        play_btn = InlineKeyboardButton(text="Play 🎮", web_app=WebAppInfo(url=webapp_url))
     else:
-        play_btn = KeyboardButton(text="🎮 Play")
-    
-    keyboard = [
-        [play_btn, KeyboardButton(text="📝 Register", request_contact=True)],
-        [KeyboardButton(text="💵 Check Balance"), KeyboardButton(text="💰 Deposit")],
-        [KeyboardButton(text="☎️ Contact Support"), KeyboardButton(text="📖 Instruction")],
-        [KeyboardButton(text="🎁 Transfer"), KeyboardButton(text="💸 Withdraw")],
-        [KeyboardButton(text="🔗 Invite"), KeyboardButton(text="💱 Convert Bonus")],
-    ]
-    
-    return ReplyKeyboardMarkup(
-        keyboard=keyboard,
-        resize_keyboard=True,
-        is_persistent=True,
-        one_time_keyboard=False,
-        input_field_placeholder="Choose an option..."
-    )
+        play_btn = InlineKeyboardButton(text="Play 🎮", callback_data="cb_play")
+
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [play_btn,
+         InlineKeyboardButton(text="Register 📝",       callback_data="cb_register")],
+        [InlineKeyboardButton(text="Check Balance 💵",  callback_data="cb_balance"),
+         InlineKeyboardButton(text="Deposit 💰",         callback_data="cb_deposit")],
+        [InlineKeyboardButton(text="Contact Support 🏠", callback_data="cb_support"),
+         InlineKeyboardButton(text="Instruction 📖",    callback_data="cb_instruction")],
+        [InlineKeyboardButton(text="Transfer 🎁",       callback_data="cb_transfer"),
+         InlineKeyboardButton(text="Withdraw 🤑",       callback_data="cb_withdraw")],
+        [InlineKeyboardButton(text="Invite 🔗",         callback_data="cb_invite"),
+         InlineKeyboardButton(text="Convert Bonus 💲",  callback_data="cb_convert")],
+    ])
 
 
-# Global persistent keyboard instance
+# Global inline keyboard instance
 MAIN_MENU = create_main_menu()
 
 
@@ -179,8 +180,15 @@ async def cmd_start(message: types.Message):
             f"👥 Support: {GROUP}"
         )
         
+        # Step 1 – Remove any old ReplyKeyboard that was shown before this update
         await message.answer(
             welcome_text,
+            reply_markup=ReplyKeyboardRemove(),
+            parse_mode="Markdown",
+        )
+        # Step 2 – Send inline menu (buttons appear IN the message, above input)
+        await message.answer(
+            "👋 *እንኳን ደህና መጡ! ከታች ምርጫዎን ያድርጉ:*",
             reply_markup=MAIN_MENU,
             parse_mode="Markdown",
         )
@@ -273,27 +281,35 @@ async def handle_contact(message: types.Message):
 
         # Check if this was a new registration or update
         if user.get('play_balance', 0) == 10.0 and user.get('games_played', 0) == 0:
-            # New user
+            # New user — remove the contact-share keyboard, then show inline menu
             await message.answer(
                 "🎉 ✅ *እንኳን ደስ አሎት!*\n\n"
                 "በተሳካ ሁኔታ ተመዝግበዋል!\n\n"
                 "✨ አዲስ መረጃዎች እንዲደርሱዎት ቻናልችንን እና ግሩፓችንን ይቀላቀሉ።\n\n"
                 f"📢 Channel: {CHANNEL}\n"
                 f"👥 Group: {GROUP}\n\n"
-                "🎁 *10 ETB* ቦነስ Play Wallet ላይ ተጨምሯል!\n"
-                "👉 *🎮 Play* ይጫኑ ጨዋታ ለመጀምር!",
+                "🎁 *10 ETB* ቦነስ Play Wallet ላይ ተጨምሯል!",
                 parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),  # Close the contact-share keyboard
+            )
+            await message.answer(
+                "👇 *ምርጫዎን ያድርጉ:*",
                 reply_markup=MAIN_MENU,
+                parse_mode="Markdown",
             )
         else:
-            # Existing user
+            # Existing user — remove the contact-share keyboard, then show inline menu
             await message.answer(
                 "✅ *ቀደም ብለው ተመዝግበዋል!*\n\n"
                 f"💰 Main Wallet: *{user.get('balance', 0):.2f} ETB*\n"
-                f"🎮 Play Wallet: *{user.get('play_balance', 0):.2f} ETB*\n\n"
-                "👉 *🎮 Play* ይጫኑ ጨዋታ ለመጀምር!",
+                f"🎮 Play Wallet: *{user.get('play_balance', 0):.2f} ETB*",
                 parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),  # Close the contact-share keyboard
+            )
+            await message.answer(
+                "👇 *ምርጫዎን ያድርጉ:*",
                 reply_markup=MAIN_MENU,
+                parse_mode="Markdown",
             )
 
     except httpx.HTTPStatusError as e:
@@ -1211,6 +1227,272 @@ async def handle_instruction(message: types.Message):
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# INLINE KEYBOARD CALLBACK HANDLERS
+# Each button in the inline menu triggers one of these callbacks.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dp.callback_query(F.data == "cb_play")
+async def cb_play(callback: CallbackQuery):
+    """Fallback Play handler when WebApp URL is not HTTPS."""
+    await callback.answer()
+    await callback.message.answer(
+        f"🎮 *AMHABINGO ለመጫወት:*\n\n"
+        f"{settings.FRONTEND_URL}\n\n"
+        "ወደ ጨዋታ ለመሄድ ሊንኩን ይጫኑ!",
+        parse_mode="Markdown",
+        reply_markup=MAIN_MENU
+    )
+
+
+@dp.callback_query(F.data == "cb_register")
+async def cb_register(callback: CallbackQuery):
+    """Show a temporary contact-share keyboard to collect phone number."""
+    await callback.answer()
+    contact_kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📲 ስልክ ቁጥር ያጋሩ", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await callback.message.answer(
+        "📝 *Register — ይመዝገቡ*\n\n"
+        "ስልክ ቁጥርዎን ያጋሩ!\n"
+        "_(Registration ካደረጉ *10 ETB* ቦነስ ያገኛሉ!)_\n\n"
+        "ከታች ያለውን ቁልፍ ይጫኑ 👇",
+        reply_markup=contact_kb,
+        parse_mode="Markdown"
+    )
+
+
+@dp.callback_query(F.data == "cb_balance")
+async def cb_balance(callback: CallbackQuery):
+    """Check user balance via inline button."""
+    await callback.answer("⏳ Checking balance...")
+    telegram_id = callback.from_user.id
+    try:
+        balance_data = await api_client.get_user_balance(telegram_id)
+        username = (
+            balance_data.get('first_name')
+            or balance_data.get('username')
+            or callback.from_user.first_name
+            or "Player"
+        )
+        phone = balance_data.get('phone_number', 'N/A')
+        if phone and phone.startswith('+251'):
+            phone = '0' + phone[4:]
+        account_info = (
+            f"💳 *Account Info*\n\n"
+            f"```\n"
+            f"Name:          {username}\n"
+            f"Phone:         {phone}\n"
+            f"Main wallet:   {balance_data['balance']:.1f}\n"
+            f"Play wallet:   {balance_data['play_balance']:.1f}\n"
+            f"Coin:          {balance_data['coins']}\n"
+            f"```"
+        )
+        await callback.message.answer(account_info, parse_mode="Markdown", reply_markup=MAIN_MENU)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            await callback.message.answer(
+                "❌ *ተመዝግበው አልቀረቡም።*\n\nእባክዎን *Register 📝* ቁልፉን ይጫኑ።",
+                parse_mode="Markdown", reply_markup=MAIN_MENU
+            )
+        else:
+            await callback.message.answer(
+                f"❌ Balance error ({e.response.status_code}).\nContact: {GROUP}",
+                reply_markup=MAIN_MENU
+            )
+    except Exception as e:
+        logger.error(f"Balance callback error: {e}")
+        await callback.message.answer(
+            "❌ Could not fetch balance. Please try again.",
+            reply_markup=MAIN_MENU
+        )
+
+
+@dp.callback_query(F.data == "cb_deposit")
+async def cb_deposit(callback: CallbackQuery, state: FSMContext):
+    """Start deposit flow via inline button."""
+    await callback.answer()
+    await callback.message.answer(
+        "💰 *Deposit — ገንዘብ ይጨምሩ*\n\n"
+        "ምን ያህል ገንዘብ deposit ማድረግ ይፈልጋሉ?\n"
+        "ዝቅተኛ deposit: *10 ETB*\n\n"
+        "የገንዘብ መጠኑን ይላኩ (ምሳሌ: 100)",
+        parse_mode="Markdown"
+    )
+    await state.set_state(DepositStates.waiting_for_amount)
+
+
+@dp.callback_query(F.data == "cb_support")
+async def cb_support(callback: CallbackQuery):
+    """Contact support via inline button."""
+    await callback.answer()
+    await callback.message.answer(
+        "🏠 *Contact Support*\n\n"
+        "ለማናቸውም ጥያቄ ወይም ችግር:\n\n"
+        f"📢 Channel: {CHANNEL}\n"
+        f"👥 Group: {GROUP}\n\n"
+        "Support team ይጠብቀዎታል! 🙏",
+        parse_mode="Markdown",
+        reply_markup=MAIN_MENU
+    )
+
+
+@dp.callback_query(F.data == "cb_instruction")
+async def cb_instruction(callback: CallbackQuery):
+    """Show game instructions via inline button."""
+    await callback.answer()
+    await callback.message.answer(
+        "📖 *AMHABINGO — አጫወት ስልት*\n\n"
+        "1️⃣ *Register* — ስልክ ቁጥርዎን ያጋሩ (10 ETB ቦነስ)\n"
+        "2️⃣ *Play* — Stake ይምረጡ (10, 20, 50, 100 ETB)\n"
+        "3️⃣ *Cartela* — ካርቴላ ቁጥር ይምረጡ (1-600)\n"
+        "4️⃣ *ጨዋታ ይጀምሩ* — ቁጥሮቸ ሲጠሩ ካርቴላዎ ይሞላል\n"
+        "5️⃣ *BINGO!* — ረድፍ፣ ዓምድ ወይም ሰያፍ ሞልቶ ያሸንፋሉ\n\n"
+        "💰 *Prize = (Players × Stake) × 80%*\n"
+        "🏆 ድሉ ወዲያው ወደ Main Wallet ይጨምራል!\n\n"
+        f"📢 Channel: {CHANNEL}\n"
+        f"👥 Group: {GROUP}",
+        parse_mode="Markdown",
+        reply_markup=MAIN_MENU
+    )
+
+
+@dp.callback_query(F.data == "cb_transfer")
+async def cb_transfer_btn(callback: CallbackQuery, state: FSMContext):
+    """Start transfer flow via inline button."""
+    await callback.answer()
+    await callback.message.answer(
+        "🎁 *Transfer — ወደ ሌሎች ያስተላልፉ*\n\n"
+        "ገንዘብ ለሌሎች ተጫዋቾች ያስተላልፉ!\n\n"
+        "የተቀባዩን Telegram ID ያስገቡ:\n"
+        "ምሳሌ: 123456789\n\n"
+        "💡 ጓደኛዎን ID ለማወቅ /start ላይ ይጫኑ",
+        parse_mode="Markdown"
+    )
+    await state.set_state(TransferStates.waiting_for_receiver_id)
+
+
+@dp.callback_query(F.data == "cb_withdraw")
+async def cb_withdraw_btn(callback: CallbackQuery, state: FSMContext):
+    """Start withdrawal flow via inline button."""
+    await callback.answer("⏳")
+    telegram_id = callback.from_user.id
+    try:
+        balance_data = await api_client.get_user_balance(telegram_id)
+        if balance_data['balance'] < 50:
+            await callback.message.answer(
+                f"❌ *Withdraw አይቻልም!*\n\n"
+                f"ቀሪ ሒሳብ: *{balance_data['balance']:.2f} ETB*\n"
+                f"ዝቅተኛ withdraw: *50 ETB*\n\n"
+                "🎮 ጨዋታ ይጫወቱ balance ይጨምሩ!",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU
+            )
+            return
+        await callback.message.answer(
+            f"🤑 *Withdraw — ገንዘብ ያወጡ*\n\n"
+            f"💰 ያሎት ሒሳብ: *{balance_data['balance']:.2f} ETB*\n"
+            f"ዝቅተኛ withdraw: *50 ETB*\n\n"
+            "ምን ያህል ማውጣት ይፈልጋሉ?\n"
+            "የገንዘብ መጠኑን ይላኩ (ምሳሌ: 100)",
+            parse_mode="Markdown"
+        )
+        await state.update_data(current_balance=balance_data['balance'])
+        await state.set_state(WithdrawalStates.waiting_for_amount)
+    except Exception as e:
+        if "404" in str(e):
+            await callback.message.answer(
+                "❌ ተመዝግበው አልቀረቡም። *Register 📝* ይጫኑ።",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU
+            )
+        else:
+            logger.error(f"Withdraw callback error: {e}")
+            await callback.message.answer(
+                "❌ Could not process request. Please try again.",
+                reply_markup=MAIN_MENU
+            )
+
+
+@dp.callback_query(F.data == "cb_invite")
+async def cb_invite_btn(callback: CallbackQuery):
+    """Show referral invite link via inline button."""
+    await callback.answer()
+    bot_info = await bot.get_me()
+    invite_url = f"https://t.me/{bot_info.username}?start=ref_{callback.from_user.id}"
+    try:
+        referrals = await api_client.get_referrals(callback.from_user.id)
+        total_referrals = referrals.get('total_referrals', 0)
+        total_earned = referrals.get('total_earned', 0)
+        await callback.message.answer(
+            f"🔗 *ጓደኞቸዎን ይጋብዙ!*\n\n"
+            f"📊 *የእርስዎ Statistics:*\n"
+            f"👥 Total Invites: *{total_referrals}*\n"
+            f"💰 Total Earned: *{total_earned} ETB*\n\n"
+            f"🎁 *ለእያንዳንዱ ጓደኛ 5 ETB ያገኛሉ!*\n\n"
+            f"ይህን ሊንክ ያጋሩ:\n`{invite_url}`\n\n"
+            f"📢 ቻናላችንንም ያጋሩ:\n{CHANNEL}",
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU
+        )
+    except Exception:
+        await callback.message.answer(
+            f"🔗 *ጓደኛዎን ይጋብዙ!*\n\n"
+            f"🎁 ለእያንዳንዱ ጓደኛ *5 ETB* ያገኛሉ!\n\n"
+            f"ይህን ሊንክ ጓደኞቸዎ ያጋሩ:\n\n`{invite_url}`\n\n"
+            f"📢 ቻናላችንንም ያጋሩ:\n{CHANNEL}",
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU
+        )
+
+
+@dp.callback_query(F.data == "cb_convert")
+async def cb_convert_btn(callback: CallbackQuery):
+    """Show coin conversion info via inline button."""
+    await callback.answer("⏳")
+    telegram_id = callback.from_user.id
+    try:
+        balance_data = await api_client.get_user_balance(telegram_id)
+        if balance_data['coins'] < 100:
+            await callback.message.answer(
+                f"💲 *Convert Bonus*\n\n"
+                f"🪙 ያሎት Coins: *{balance_data['coins']}*\n"
+                f"🎮 Play Wallet: *{balance_data['play_balance']:.2f} ETB*\n\n"
+                f"❌ ዝቅተኛ conversion: *100 Coins*\n\n"
+                f"🎮 ጨዋታ ይጫወቱ coins ይሰብስቡ!",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU
+            )
+            return
+        max_coins = (balance_data['coins'] // 100) * 100
+        etb_amount = max_coins / 100
+        await callback.message.answer(
+            f"💲 *Convert Bonus*\n\n"
+            f"🪙 ያሎት Coins: *{balance_data['coins']}*\n"
+            f"💱 Conversion Rate: *100 Coins = 1 ETB*\n\n"
+            f"✅ ማስተላለፍ የሚችሉት:\n"
+            f"🪙 *{max_coins} Coins* → 💵 *{etb_amount} ETB*\n\n"
+            f"ለማረጋገጥ ቁጥሩን ይላኩ: *{max_coins}*",
+            parse_mode="Markdown",
+            reply_markup=MAIN_MENU
+        )
+    except Exception as e:
+        if "404" in str(e):
+            await callback.message.answer(
+                "❌ ተመዝግበው አልቀረቡም። *Register 📝* ይጫኑ።",
+                parse_mode="Markdown",
+                reply_markup=MAIN_MENU
+            )
+        else:
+            logger.error(f"Convert callback error: {e}")
+            await callback.message.answer(
+                "❌ Could not process request. Please try again.",
+                reply_markup=MAIN_MENU
+            )
+
+
 # ── Catch-all ─────────────────────────────────────────────────────────────────
 @dp.message(Command("cancel"))
 async def cmd_cancel(message: types.Message, state: FSMContext):
@@ -1219,19 +1501,21 @@ async def cmd_cancel(message: types.Message, state: FSMContext):
     if current_state is None:
         await message.answer("ምንም የሚሰረዝ operation የለም።")
         return
-    
+
     await state.clear()
     await message.answer(
-        "❌ Operation ተሰርዟል።",
-        reply_markup=MAIN_MENU
+        "❌ Operation ተሰርዟል።\n\n"
+        "👇 *ምርጫዎን ያድርጉ:*",
+        reply_markup=MAIN_MENU,
+        parse_mode="Markdown"
     )
 
 
 @dp.message()
 async def catch_all(message: types.Message, state: FSMContext):
-    """Catch-all handler - check if in FSM state."""
+    """Catch-all handler — show inline menu for unrecognised messages."""
     current_state = await state.get_state()
-    
+
     if current_state:
         await message.answer(
             "❌ ያልተጠበቀ input።\n"
@@ -1239,8 +1523,10 @@ async def catch_all(message: types.Message, state: FSMContext):
         )
     else:
         await message.answer(
-            "🤷 ያዘዙትን አላወቅሁም። ከታች ያለውን ሜኑ ይጠቀሙ።",
+            "🤷 ያዘዙትን አላወቅሁም።\n\n"
+            "👇 *ምርጫዎን ያድርጉ:*",
             reply_markup=MAIN_MENU,
+            parse_mode="Markdown"
         )
 
 
