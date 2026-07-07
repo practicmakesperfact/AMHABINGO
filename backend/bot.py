@@ -9,7 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton, WebAppInfo,
     InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
-    ReplyKeyboardRemove, FSInputFile
+    ReplyKeyboardRemove, FSInputFile, BotCommand
 )
 import sys
 import os
@@ -156,14 +156,7 @@ async def cmd_start(message: types.Message):
                 except Exception as e:
                     logger.error(f"❌ Referral failed: {e} — {traceback.format_exc()}")
 
-        # ── Step 1: Remove old ReplyKeyboard (silent) ────────────────────────
-        # Sending ReplyKeyboardRemove clears any keyboard left from old version
-        await message.answer(
-            "🇪🇹",  # tiny message, removed with keyboard
-            reply_markup=ReplyKeyboardRemove()
-        )
-
-        # ── Step 2: Send banner image (like Beteseb Bingo's logo photo) ───────
+        # ── Step 1: Send banner image (like Beteseb Bingo's logo photo) ─────────
         if os.path.exists(BANNER_PATH):
             await message.answer_photo(
                 photo=FSInputFile(BANNER_PATH),
@@ -203,24 +196,69 @@ async def cmd_start(message: types.Message):
             logger.error(f"❌ Even fallback response failed: {fallback_error}")
 
 
-# ── Commands ─────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# SHORTCUT COMMANDS — visible in Telegram's "/" menu (like Beteseb Bingo)
+# ══════════════════════════════════════════════════════════════════════════════
 
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
     await message.answer(
-        "🆘 *AMHABINGO Help*\n\n"
-        "• *Register 📋* — ስልክ ቁጥርዎን ያጋሩ (10 ETB ቦነስ)\n"
-        "• *Play 🎮* — ጨዋታ ይጀምሩ\n"
-        "• *Check Balance 💵* — ቀሪ ሒሳብ ያረጋግጡ\n"
-        "• *Deposit 💰* — ገንዘብ ይጨምሩ\n"
-        "• *Withdraw 🤑* — ገንዘብ ያወጡ\n"
-        "• *Transfer 🎁* — ወደ ሌሎች ያስተላልፉ\n"
-        "• *Invite 🔗* — ጓደኞችን ይጋብዙ\n"
-        "• *Convert Bonus 💲* — Coins ቀይሩ\n\n"
+        "📖 *AMHABINGO — አጫወት ስልት*\n\n"
+        "1️⃣ *Register* — ስልክ ቁጥርዎን ያጋሩ (10 ETB ቦነስ)\n"
+        "2️⃣ *Deposit* — ገንዘብ ይጨምሩ\n"
+        "3️⃣ *Play* — Stake ይምረጡ ተጫወቱ!\n"
+        "4️⃣ *Check Balance* — ቀሪ ሒሳብ ያድርጉ\n"
+        "5️⃣ *Withdraw* — ገንዘብ ያወጡ\n"
+        "6️⃣ *Transfer* — ወደ ሌሎቹ ያስተላልፉ\n"
+        "7️⃣ *Invite* — ጓደኞቸዎን ይጋብዙ (5 ETB/friend)\n"
+        "8️⃣ *Convert Bonus* — Coins ቀይሩ\n\n"
         f"📢 Channel: {CHANNEL}\n"
         f"👥 Support: {GROUP}",
         parse_mode="Markdown",
+        reply_markup=MAIN_MENU
     )
+
+
+@dp.message(Command("balance"))
+async def cmd_balance_shortcut(message: types.Message):
+    """Shortcut: /balance → Check Balance."""
+    await check_balance(message)
+
+
+@dp.message(Command("deposit"))
+async def cmd_deposit_shortcut(message: types.Message, state: FSMContext):
+    """Shortcut: /deposit → Deposit flow."""
+    await handle_deposit(message, state)
+
+
+@dp.message(Command("withdraw"))
+async def cmd_withdraw_shortcut(message: types.Message, state: FSMContext):
+    """Shortcut: /withdraw → Withdraw flow."""
+    await handle_withdraw(message, state)
+
+
+@dp.message(Command("transfer"))
+async def cmd_transfer_shortcut(message: types.Message, state: FSMContext):
+    """Shortcut: /transfer → Transfer flow."""
+    await handle_transfer(message, state)
+
+
+@dp.message(Command("invite"))
+async def cmd_invite_shortcut(message: types.Message):
+    """Shortcut: /invite → Referral link."""
+    await handle_invite(message)
+
+
+@dp.message(Command("instruction"))
+async def cmd_instruction_shortcut(message: types.Message):
+    """Shortcut: /instruction → How to play."""
+    await handle_instruction(message)
+
+
+@dp.message(Command("convert"))
+async def cmd_convert_shortcut(message: types.Message):
+    """Shortcut: /convert → Convert Bonus."""
+    await handle_convert_bonus(message)
 
 
 # ── Contact → Register ────────────────────────────────────────────────────────
@@ -1561,6 +1599,22 @@ async def main():
     
     try:
         logger.info("🎯 Bot is now polling for updates...")
+
+        # ── Register bot commands — appear in Telegram’s “/” menu (like Beteseb Bingo)
+        await bot.set_my_commands([
+            BotCommand(command="start",       description="🏠 Main Menu"),
+            BotCommand(command="balance",     description="💵 Check Balance"),
+            BotCommand(command="deposit",     description="💰 Deposit ETB"),
+            BotCommand(command="withdraw",    description="🤑 Withdraw ETB"),
+            BotCommand(command="transfer",    description="🎁 Transfer to Player"),
+            BotCommand(command="invite",      description="🔗 Invite Friends (earn 5 ETB)"),
+            BotCommand(command="instruction", description="📖 How to Play"),
+            BotCommand(command="convert",     description="💲 Convert Bonus Coins"),
+            BotCommand(command="help",        description="❓ Help"),
+            BotCommand(command="cancel",      description="❌ Cancel Current Action"),
+        ])
+        logger.info("✅ Bot commands registered successfully")
+
         await dp.start_polling(bot)
     finally:
         # Close API client on shutdown
