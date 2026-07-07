@@ -156,15 +156,7 @@ async def cmd_start(message: types.Message):
                 except Exception as e:
                     logger.error(f"❌ Referral failed: {e} — {traceback.format_exc()}")
 
-        # ── Step 1: Send banner image (like Beteseb Bingo's logo photo) ─────────
-        if os.path.exists(BANNER_PATH):
-            await message.answer_photo(
-                photo=FSInputFile(BANNER_PATH),
-            )
-        else:
-            logger.warning(f"⚠️ Banner image not found at {BANNER_PATH}")
-
-        # ── Step 3: Welcome text + inline keyboard (matches Beteseb Bingo) ────
+        # ── Send banner image with caption + inline menu (like Beteseb Bingo) ─
         welcome = (
             f"👋 *Welcome to AMHABINGO!*{referral_bonus}\n"
             f"የኢትዮጵያ #1 Real-time Bingo Game!\n\n"
@@ -172,11 +164,20 @@ async def cmd_start(message: types.Message):
             f"👥 Support: {GROUP}\n\n"
             f"👇 *Choose an Option below.*"
         )
-        await message.answer(
-            welcome,
-            reply_markup=MAIN_MENU,
-            parse_mode="Markdown",
-        )
+        if os.path.exists(BANNER_PATH):
+            await message.answer_photo(
+                photo=FSInputFile(BANNER_PATH),
+                caption=welcome,
+                reply_markup=MAIN_MENU,
+                parse_mode="Markdown",
+            )
+        else:
+            logger.warning(f"⚠️ Banner image not found at {BANNER_PATH}")
+            await message.answer(
+                welcome,
+                reply_markup=MAIN_MENU,
+                parse_mode="Markdown",
+            )
         logger.info("✅ /start response sent successfully")
         
     except Exception as e:
