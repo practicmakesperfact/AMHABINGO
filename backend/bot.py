@@ -9,10 +9,13 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton, WebAppInfo,
     InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
-    ReplyKeyboardRemove
+    ReplyKeyboardRemove, FSInputFile
 )
 import sys
 import os
+
+# ── Banner image path (sent on /start like Beteseb Bingo) ────────────────────
+BANNER_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "amhabingo_banner.png")
 
 # Add the backend directory to path so we can import modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -131,68 +134,57 @@ async def cmd_start(message: types.Message):
     """
     try:
         logger.info(f"🚀 /start command from user {message.from_user.id}")
-        
-        # AMHABINGO Banner
-        banner = (
-            "━━━━━━━━━━━━━━━━━━━━━\n"
-            "🇪🇹  *AMHABINGO*  🇪🇹\n"
-            "የኢትዮጵያ #1 Bingo Game!\n"
-            "━━━━━━━━━━━━━━━━━━━━━"
-        )
-        
-        # Check if this is a referral
-        referral_message = ""
+
+        # ── Handle referral code (/start ref_XXXXXXX) ────────────────────────
+        referral_bonus = ""
         if message.text and len(message.text.split()) > 1:
             args = message.text.split()[1]
             if args.startswith("ref_"):
                 try:
                     referrer_id = int(args.replace("ref_", ""))
-                    referee_id = message.from_user.id
-                    
-                    # Don't process if user refers themselves
+                    referee_id  = message.from_user.id
                     if referrer_id != referee_id:
                         logger.info(f"🎁 Processing referral: {referrer_id} → {referee_id}")
                         await api_client.create_referral(
                             referrer_telegram_id=referrer_id,
                             referee_telegram_id=referee_id
                         )
-                        referral_message = "\n🎁 *የ Referral Bonus ተመዝግቧል!*\n✅ አጋዥዎ 5 ETB ያገኛል!\n"
-                        logger.info(f"✅ Referral created successfully")
+                        referral_bonus = "\n🎁 *Referral Bonus ተመዝግቧል!* አጋዥዎ 5 ETB ያገኛል!\n"
+                        logger.info("✅ Referral created")
                 except ValueError as e:
                     logger.error(f"❌ Invalid referrer ID: {e}")
                 except Exception as e:
-                    logger.error(f"❌ Referral creation failed: {e}")
-                    logger.error(f"📋 Traceback: {traceback.format_exc()}")
-        
-        # Welcome message
-        welcome_text = (
-            f"{banner}\n\n"
-            f"{referral_message}"
-            f"👋 *እንኳን ደህና መጡ!*\n\n"
-            f"🎮 Real-time Bingo ጨዋታ!\n"
-            f"💰 ይጫወቱ እና ያሸንፉ!\n"
-            f"🇪🇹 100% Ethiopian!\n\n"
-            f"📋 *የመጀመሪያ ደረጃ:*\n"
-            f"1️⃣ *📝 Register* ይጫኑ\n"
-            f"2️⃣ *💰 Deposit* ያድርጉ\n"
-            f"3️⃣ *🎮 Play* ይጫወቱ!\n\n"
+                    logger.error(f"❌ Referral failed: {e} — {traceback.format_exc()}")
+
+        # ── Step 1: Remove old ReplyKeyboard (silent) ────────────────────────
+        # Sending ReplyKeyboardRemove clears any keyboard left from old version
+        await message.answer(
+            "🇪🇹",  # tiny message, removed with keyboard
+            reply_markup=ReplyKeyboardRemove()
+        )
+
+        # ── Step 2: Send banner image (like Beteseb Bingo's logo photo) ───────
+        if os.path.exists(BANNER_PATH):
+            await message.answer_photo(
+                photo=FSInputFile(BANNER_PATH),
+            )
+        else:
+            logger.warning(f"⚠️ Banner image not found at {BANNER_PATH}")
+
+        # ── Step 3: Welcome text + inline keyboard (matches Beteseb Bingo) ────
+        welcome = (
+            f"👋 *Welcome to AMHABINGO!*{referral_bonus}\n"
+            f"የኢትዮጵያ #1 Real-time Bingo Game!\n\n"
             f"📢 Channel: {CHANNEL}\n"
-            f"👥 Support: {GROUP}"
+            f"👥 Support: {GROUP}\n\n"
+            f"👇 *Choose an Option below.*"
         )
-        
-        # Step 1 – Remove any old ReplyKeyboard that was shown before this update
         await message.answer(
-            welcome_text,
-            reply_markup=ReplyKeyboardRemove(),
-            parse_mode="Markdown",
-        )
-        # Step 2 – Send inline menu (buttons appear IN the message, above input)
-        await message.answer(
-            "👋 *እንኳን ደህና መጡ! ከታች ምርጫዎን ያድርጉ:*",
+            welcome,
             reply_markup=MAIN_MENU,
             parse_mode="Markdown",
         )
-        logger.info(f"✅ /start response sent successfully")
+        logger.info("✅ /start response sent successfully")
         
     except Exception as e:
         logger.error(f"❌ CRITICAL ERROR in /start handler: {e}")
